@@ -66,6 +66,22 @@
     };
   }
 
+  // Keep layout customizations but rebuild speaker frames from the current episode.
+  function refreshSpeakerFrames(doc, episodeSummary, styleSelection) {
+    const STY = styleApi();
+    const next = cloneDoc(doc || createFromStyle({}, {}, {}));
+    const episode = episodeSummary || {};
+    const selection = styleSelection || {};
+    if (STY) {
+      next.speakerFrames = STY.buildPreviewFrames(
+        episode.speakers,
+        selection,
+        episode.speakerCount,
+      );
+    }
+    return next;
+  }
+
   function updateElement(doc, key, value) {
     const next = cloneDoc(doc || createFromStyle({}, {}, {}));
     if (key === "titleText" || key === "captionText" || key === "background" || key === "accent") {
@@ -113,6 +129,7 @@
 
   const api = {
     createFromStyle,
+    refreshSpeakerFrames,
     updateElement,
     updateLayers,
     summarize,

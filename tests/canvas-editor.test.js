@@ -129,4 +129,24 @@ test("ACCEPTANCE: customize canvas, save named template, and reselect it", () =>
   assert.ok(appliedCanvas.layers.length >= 5);
 });
 
+test("refreshSpeakerFrames rebuilds speaker frames for a new episode", () => {
+  const draftA = completeUploadDraft();
+  const episodeA = setup.summarize(draftA);
+  const selection = style.createSelection();
+  const applied = style.summarizeStyle(selection, episodeA.speakerCount);
+  let doc = editor.createFromStyle(applied, episodeA, selection);
+
+  const draftB = setup.createDraft();
+  draftB.sourceMode = "upload";
+  draftB.speakers = [
+    Object.assign(setup.createSpeaker("Host"), { name: "New Host", fileName: "host.mp4" }),
+  ];
+  const episodeB = setup.summarize(draftB);
+
+  doc = editor.refreshSpeakerFrames(doc, episodeB, selection);
+  assert.strictEqual(doc.speakerFrames.length, 1);
+  assert.strictEqual(doc.speakerFrames[0].name, "New Host");
+  assert.strictEqual(doc.titleText, "Founders Unfiltered #7");
+});
+
 console.log(`\ncanvas editor: ${passed} assertions passed`);

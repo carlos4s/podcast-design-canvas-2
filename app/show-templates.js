@@ -7,6 +7,22 @@
 (function (global) {
   let templateCounter = 0;
 
+  function styleApi() {
+    if (typeof module !== "undefined" && module.exports && typeof require === "function") {
+      return require("./episode-style.js");
+    }
+    const g = typeof window !== "undefined" ? window : globalThis;
+    return g.PdcEpisodeStyle;
+  }
+
+  function editorApi() {
+    if (typeof module !== "undefined" && module.exports && typeof require === "function") {
+      return require("./canvas-editor.js");
+    }
+    const g = typeof window !== "undefined" ? window : globalThis;
+    return g.PdcCanvasEditor;
+  }
+
   function createStore() {
     return { templates: [] };
   }
@@ -87,6 +103,42 @@
     return cloneCanvas(template.canvas);
   }
 
+  // Apply a saved template to a new episode — layout and style settings carry over,
+  // speaker frames rebuild from the current episode's assigned speakers.
+  function applyTemplateForEpisode(template, episodeSummary, styleSelection) {
+    const canvas = applyTemplate(template);
+    if (!canvas) {
+      return null;
+    }
+    const CE = editorApi();
+    const STY = styleApi();
+    const episode = episodeSummary || {};
+    const selection = styleSelection || {};
+    if (CE && typeof CE.refreshSpeakerFrames === "function") {
+      return CE.refreshSpeakerFrames(canvas, episode, selection);
+    }
+    if (STY) {
+      canvas.speakerFrames = STY.buildPreviewFrames(
+        episode.speakers,
+        selection,
+        episode.speakerCount,
+      );
+    }
+    return canvas;
+  }
+
+  function styleSelectionFromCanvas(canvas) {
+    const STY = styleApi();
+    if (!STY || !canvas) {
+      return null;
+    }
+    const selection = STY.createSelection();
+    selection.presetId = canvas.presetId || selection.presetId;
+    selection.layout = canvas.layoutId || selection.layout;
+    selection.pacing = canvas.pacingId || selection.pacing;
+    return selection;
+  }
+
   function serializeStore(store) {
     return JSON.stringify(store || createStore());
   }
@@ -118,6 +170,8 @@
     listTemplates,
     getTemplate,
     applyTemplate,
+    applyTemplateForEpisode,
+    styleSelectionFromCanvas,
     serializeStore,
     deserializeStore,
     _resetTemplateCounter,

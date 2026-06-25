@@ -742,10 +742,10 @@
     view.scrollIntoView({ block: "start" });
   }
 
-  function renderSavedTemplatesCard(saved, summary) {
-    const card = el("section", { class: "card template-picker" }, el("h3", {}, "Saved show templates"));
+  function renderSavedTemplatesCard(saved, summary, returnTo) {
+    const card = el("section", { class: "card template-picker template-library" }, el("h3", {}, "Show template library"));
     card.appendChild(
-      el("p", { class: "hint" }, "Reuse a layout you designed for a previous episode."),
+      el("p", { class: "hint" }, "Pick a saved layout and style — your current episode speakers stay assigned."),
     );
     const list = el("div", { class: "template-list" });
     saved.forEach((item) => {
@@ -761,7 +761,7 @@
       );
       const useButton = el("button", { type: "button", class: "ghost" }, "Use template");
       useButton.addEventListener("click", () => {
-        applySavedTemplate(item.id, summary);
+        applySavedTemplate(item.id, summary, { returnTo: returnTo });
       });
       row.appendChild(useButton);
       list.appendChild(row);
@@ -770,7 +770,7 @@
     return card;
   }
 
-  function applySavedTemplate(templateId, summary) {
+  function applySavedTemplate(templateId, summary, options) {
     if (!TM) {
       return;
     }
@@ -778,17 +778,19 @@
     if (!template) {
       return;
     }
-    canvasDoc = TM.applyTemplate(template);
+    const episodeSummary = summary || ES.summarize(state);
+    const fromCanvas = TM.styleSelectionFromCanvas(template.canvas);
+    styleSelection = fromCanvas || styleSelection || (STY ? STY.createSelection() : null);
+    canvasDoc = TM.applyTemplateForEpisode(template, episodeSummary, styleSelection);
     activeTemplateId = template.id;
-    if (canvasDoc && STY) {
-      styleSelection = styleSelection || STY.createSelection();
-      styleSelection.presetId = canvasDoc.presetId || styleSelection.presetId;
-      styleSelection.layout = canvasDoc.layoutId || styleSelection.layout;
-      styleSelection.pacing = canvasDoc.pacingId || styleSelection.pacing;
-      appliedStyle = STY.summarizeStyle(styleSelection, summary ? summary.speakerCount : 3);
+    if (STY && styleSelection) {
+      appliedStyle = STY.summarizeStyle(styleSelection, episodeSummary.speakerCount);
     }
-    if (summary) {
-      renderWorkspace(summary);
+    const returnTo = options && options.returnTo;
+    if (returnTo === "style") {
+      renderStyle(episodeSummary);
+    } else if (summary) {
+      renderWorkspace(episodeSummary);
     } else {
       renderSetup();
     }
@@ -798,6 +800,8 @@
     workspaceSummaryCache = summary;
     if (!canvasDoc && CE && appliedStyle) {
       canvasDoc = CE.createFromStyle(appliedStyle, summary, styleSelection);
+    } else if (canvasDoc && CE) {
+      canvasDoc = CE.refreshSpeakerFrames(canvasDoc, summary, styleSelection);
     }
     renderCanvasEditor(summary);
   }
@@ -1525,6 +1529,8 @@
       );
       card.addEventListener("click", () => {
         styleSelection = STY.applyPresetToSelection(styleSelection, preset.id, layoutCustomized);
+        activeTemplateId = null;
+        canvasDoc = null;
         renderStyle(summary);
       });
       presetGrid.appendChild(card);
@@ -1541,6 +1547,8 @@
     layoutSelect.addEventListener("change", (e) => {
       styleSelection.layout = e.target.value;
       layoutCustomized = styleSelection.layout !== "auto";
+      activeTemplateId = null;
+      canvasDoc = null;
       renderStyle(summary);
     });
     controls.appendChild(field("Layout", layoutSelect, null, "Auto matches the number of speakers you set up."));
@@ -1554,6 +1562,8 @@
     });
     pacingSelect.addEventListener("change", (e) => {
       styleSelection.pacing = e.target.value;
+      activeTemplateId = null;
+      canvasDoc = null;
       renderStyle(summary);
     });
     controls.appendChild(field("Pacing", pacingSelect, null, STY.getPacing(styleSelection.pacing).note));
@@ -1571,10 +1581,20 @@
 
     view.appendChild(layoutGrid);
 
+    if (TM) {
+      const saved = TM.listTemplates(templateStore);
+      if (saved.length) {
+        view.appendChild(renderSavedTemplatesCard(saved, summary, "style"));
+      }
+    }
+
     // Actions
     const applyButton = el("button", { type: "button", class: "primary" }, "Apply style & continue →");
     applyButton.addEventListener("click", () => {
       appliedStyle = STY.summarizeStyle(styleSelection, summary.speakerCount);
+      if (!activeTemplateId) {
+        canvasDoc = null;
+      }
       renderWorkspace(summary);
     });
     const back = el("button", { type: "button", class: "ghost" }, "← Back to workspace");
