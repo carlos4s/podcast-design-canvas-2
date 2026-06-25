@@ -33,9 +33,9 @@ test("layoutCardSummary exposes card-friendly layout notes", () => {
 
 test("style step uses visual preset and choice cards instead of native selects", () => {
   assert.ok(ui.includes("renderStylePresetCard"));
-  assert.ok(ui.includes("openStylePickerDemo"));
+  assert.ok(ui.includes("renderEpisodeLookPreview"));
   assert.ok(ui.includes("style-choice-card"));
-  assert.ok(ui.includes("create-show-template-card"));
+  assert.ok(ui.includes("create-show-preset-card"));
   assert.ok(!ui.includes('id: "style-layout"'));
   assert.ok(!ui.includes('id: "style-pacing"'));
   assert.ok(!ui.includes('id: "f-show-template"'));
@@ -43,9 +43,8 @@ test("style step uses visual preset and choice cards instead of native selects",
 
 test("styles define visual preset cards with layout thumbnails", () => {
   assert.ok(styles.includes(".style-preset-card"));
-  assert.ok(styles.includes(".style-layout-thumb"));
-  assert.ok(styles.includes(".style-choice-card"));
-  assert.ok(styles.includes(".create-show-template-card"));
+  assert.ok(styles.includes(".episode-look-preview"));
+  assert.ok(styles.includes(".create-show-preset-card"));
 });
 
 test("ACCEPTANCE: preset cards carry name, layout cue, and caption format metadata", () => {

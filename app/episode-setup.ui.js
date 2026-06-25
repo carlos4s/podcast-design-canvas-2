@@ -5,7 +5,7 @@
 // publish review (#37), guided workspace (#40), export (#30), show library (#47),
 // show brand kits (#52), show identity episode start (#57), publish package (#60),
 // transcript correction (#63), episode import before brand setup (#73),
-// and episode import polish (#77, #86, #89), visual style preset cards (#94).
+// and episode import polish (#77, #86, #89), visual style preset cards (#94, #102).
 (function () {
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
@@ -23,6 +23,7 @@
   const SI = window.PdcShowIdentity;
   const ONB = window.PdcShowOnboarding;
   const FLOW = window.PdcEpisodeFlow;
+  const SP = window.PdcStylePreview;
   const PP = window.PdcPublishPackage;
   const TC = window.PdcTranscriptCorrection;
   const root = document.getElementById("app");
@@ -614,85 +615,154 @@
     root.appendChild(view);
   }
 
-  function renderNewShowForm(prefillName, errorMsg) {
+  function renderNewShowForm(prefillName, errorMsg, initialPresetId) {
     setPageIntro("new-show");
     root.innerHTML = "";
     setStep("Show Library · New Show");
 
     const saved = TM ? TM.listTemplates(templateStore) : [];
+    const defaultPreset = STY ? STY.defaultPreset() : null;
+    let selectedTemplateId = initialPresetId || (defaultPreset ? `preset:${defaultPreset.id}` : "");
+    let selectedPresetName = defaultPreset ? defaultPreset.name : "";
 
     const nameInput = el("input", { id: "f-show-name", type: "text", value: prefillName || "", placeholder: "e.g. Founders Unfiltered" });
 
-    let selectedTemplateId = "";
-    let selectedPresetName = "";
-    const templatePicker = el("div", { class: "create-show-template-picker" });
-    const presetChoices = STY
-      ? STY.STYLE_PRESETS.map((preset) => ({
-        id: `preset:${preset.id}`,
-        name: preset.name,
-        presetName: preset.name,
-        layoutId: preset.defaultLayout,
-        preset: preset,
-      }))
-      : [];
-    const templateChoices = [
-      { id: "", name: "Blank show", presetName: "Pick a style during import", layoutId: "auto", preset: null },
-    ].concat(presetChoices).concat(
-      saved.map((template) => ({
-        id: template.id,
-        name: template.name,
-        presetName: template.presetName || "Saved template",
-        layoutId: "grid",
-        preset: STY && template.presetName
-          ? STY.STYLE_PRESETS.find((item) => item.name === template.presetName) || null
-          : null,
-      })),
-    );
+    const previewHost = el("div", { class: "create-show-preview-host", id: "create-show-preview-host" });
 
-    function renderCreateShowTemplateCard(template, selected) {
-      const preset = template.preset
-        || (template.id && STY
-          ? STY.STYLE_PRESETS.find((item) => item.name === template.presetName) || STY.defaultPreset()
-          : null);
-      const cues = preset && STY ? STY.presetCardSummary(preset) : null;
-      return el(
-        "button",
-        {
-          type: "button",
-          class: `create-show-template-card${selected ? " selected" : ""}`,
-          "aria-pressed": selected ? "true" : "false",
-        },
-        renderLayoutThumb(
-          preset ? preset.defaultLayout : template.layoutId || "auto",
-          preset ? { background: preset.background, accent: preset.accent } : {},
-        ),
-        el("span", { class: "create-show-template-name" }, template.name),
+    function selectedPresetIdFromChoice() {
+      if (selectedTemplateId.indexOf("preset:") === 0) {
+        return selectedTemplateId.slice("preset:".length);
+      }
+      return null;
+    }
+
+    function refreshLargePreview() {
+      previewHost.innerHTML = "";
+      const presetId = selectedPresetIdFromChoice();
+      if (presetId && SP) {
+        previewHost.appendChild(
+          renderEpisodeLookPreview(SP.buildEpisodeLook(presetId, { showName: nameInput.value }), "hero"),
+        );
+        return;
+      }
+      previewHost.appendChild(
         el(
-          "span",
-          { class: "create-show-template-meta" },
-          cues ? cues.formatCue : template.presetName,
+          "p",
+          { class: "hint create-show-preview-placeholder" },
+          "Select a named preset to preview your publish-ready episode look.",
         ),
       );
     }
 
-    templateChoices.forEach((template) => {
-      const selected = selectedTemplateId === template.id;
-      const card = renderCreateShowTemplateCard(template, selected);
-      card.addEventListener("click", () => {
-        selectedTemplateId = template.id;
-        selectedPresetName = template.presetName === "Pick a style during import" ? "" : template.presetName;
-        templatePicker.querySelectorAll(".create-show-template-card").forEach((node) => {
-          const isActive = node === card;
-          node.classList.toggle("selected", isActive);
-          node.setAttribute("aria-pressed", isActive ? "true" : "false");
+    const presetGrid = el("div", { class: "create-show-preset-grid" });
+    if (STY && SP) {
+      STY.STYLE_PRESETS.forEach((preset) => {
+        const choiceId = `preset:${preset.id}`;
+        const selected = selectedTemplateId === choiceId;
+        const card = el(
+          "button",
+          {
+            type: "button",
+            class: `create-show-preset-card${selected ? " selected" : ""}`,
+            "aria-pressed": selected ? "true" : "false",
+          },
+          renderEpisodeLookPreview(SP.buildEpisodeLook(preset.id, { showName: nameInput.value }), "card"),
+          el("span", { class: "create-show-preset-name" }, preset.name),
+          el("span", { class: "create-show-preset-tagline" }, preset.tagline),
+        );
+        card.addEventListener("click", () => {
+          selectedTemplateId = choiceId;
+          selectedPresetName = preset.name;
+          presetGrid.querySelectorAll(".create-show-preset-card").forEach((node) => {
+            const isActive = node === card;
+            node.classList.toggle("selected", isActive);
+            node.setAttribute("aria-pressed", isActive ? "true" : "false");
+          });
+          blankOption.classList.remove("selected");
+          blankOption.setAttribute("aria-pressed", "false");
+          refreshLargePreview();
         });
+        presetGrid.appendChild(card);
       });
-      templatePicker.appendChild(card);
+    }
+
+    const blankOption = el(
+      "button",
+      {
+        type: "button",
+        class: `create-show-blank-option${selectedTemplateId === "" ? " selected" : ""}`,
+        "aria-pressed": selectedTemplateId === "" ? "true" : "false",
+      },
+      "Blank show — choose a style later during import",
+    );
+    blankOption.addEventListener("click", () => {
+      selectedTemplateId = "";
+      selectedPresetName = "";
+      presetGrid.querySelectorAll(".create-show-preset-card").forEach((node) => {
+        node.classList.remove("selected");
+        node.setAttribute("aria-pressed", "false");
+      });
+      blankOption.classList.add("selected");
+      blankOption.setAttribute("aria-pressed", "true");
+      refreshLargePreview();
     });
+
+    nameInput.addEventListener("input", () => refreshLargePreview());
+
+    const savedTemplatesBlock = el("div", { class: "create-show-saved-templates" });
+    if (saved.length) {
+      savedTemplatesBlock.appendChild(el("span", { class: "create-show-saved-label" }, "Saved templates"));
+      saved.forEach((template) => {
+        const row = el("button", {
+          type: "button",
+          class: `create-show-saved-template${selectedTemplateId === template.id ? " selected" : ""}`,
+        }, template.name);
+        row.addEventListener("click", () => {
+          selectedTemplateId = template.id;
+          selectedPresetName = template.presetName || "";
+          blankOption.classList.remove("selected");
+          blankOption.setAttribute("aria-pressed", "false");
+          presetGrid.querySelectorAll(".create-show-preset-card").forEach((node) => {
+            node.classList.remove("selected");
+            node.setAttribute("aria-pressed", "false");
+          });
+          savedTemplatesBlock.querySelectorAll(".create-show-saved-template").forEach((node) => {
+            node.classList.toggle("selected", node === row);
+          });
+          refreshLargePreview();
+        });
+        savedTemplatesBlock.appendChild(row);
+      });
+    }
 
     if (errorMsg) {
       root.appendChild(el("div", { class: "banner", role: "alert" }, errorMsg));
     }
+
+    const presetLayout = el(
+      "div",
+      { class: "create-show-preset-layout" },
+      el(
+        "section",
+        { class: "create-show-preset-panel" },
+        el("span", { class: "field-label" }, "Choose your show look"),
+        el(
+          "p",
+          { class: "hint create-show-preset-lead" },
+          "Start from a publish-ready preset — each card shows realistic speaker framing, captions, and overlay treatment.",
+        ),
+        presetGrid,
+        blankOption,
+        saved.length ? savedTemplatesBlock : null,
+      ),
+      el(
+        "section",
+        { class: "card create-show-preview-panel" },
+        el("h3", {}, "Episode look preview"),
+        el("p", { class: "hint" }, "Sample multi-speaker episode with title bar, captions, and pacing cues."),
+        previewHost,
+      ),
+    );
 
     const form = el(
       "div",
@@ -704,12 +774,7 @@
         el("label", { for: "f-show-name" }, "Show name"),
         nameInput,
       ),
-      el(
-        "div",
-        { class: "field create-show-template-field" },
-        el("span", { class: "field-label" }, "Default look for this show (optional)"),
-        templatePicker,
-      ),
+      presetLayout,
       el(
         "p",
         { class: "hint" },
@@ -725,7 +790,7 @@
       const name = nameInput.value;
       const check = LIB.validateShowName(showLibrary, name);
       if (!check.ok) {
-        renderNewShowForm(name, check.error);
+        renderNewShowForm(name, check.error, selectedTemplateId);
         return;
       }
       const tpl = saved.find((t) => t.id === selectedTemplateId);
@@ -743,6 +808,7 @@
 
     const footer = el("div", { class: "workspace-actions setup-cta-bar" }, cancelBtn, saveBtn);
     root.appendChild(el("div", { class: "workspace-root" }, form, footer));
+    refreshLargePreview();
   }
 
   function renderShowDetail(showId) {
@@ -3398,7 +3464,68 @@
     view.scrollIntoView({ block: "start" });
   }
 
-  // ---- Preset style selection + preview (#4, #94) ----------------------------------
+  // ---- Preset style selection + preview (#4, #94, #102) -------------------------
+
+  function renderEpisodeLookPreview(look, size) {
+    if (!look) {
+      return el("div", { class: "episode-look-preview episode-look-empty" }, "Choose a preset to preview the episode look.");
+    }
+    const previewSize = size || "hero";
+    const preview = el("div", {
+      class: `episode-look-preview episode-look-${previewSize} stage-${look.layoutId} preset-${look.presetId}`,
+    });
+
+    preview.appendChild(
+      el(
+        "div",
+        { class: "episode-look-chrome" },
+        el("span", { class: "episode-look-title" }, look.episodeTitle),
+        el("span", { class: "episode-look-overlay" }, look.overlayLabel),
+      ),
+    );
+
+    const stage = el("div", {
+      class: "episode-look-stage",
+      style: `background:${look.theme.background};color:${look.theme.textColor};`,
+    });
+    const framesWrap = el("div", { class: "episode-look-frames" });
+    look.frames.forEach((frame) => {
+      const frameEl = el("div", { class: `episode-look-frame${frame.active ? " active" : ""}` });
+      const video = el("div", {
+        class: "episode-look-video",
+        style: `background:linear-gradient(160deg, ${frame.tile}, ${look.theme.surface});`,
+      });
+      video.appendChild(el("span", { class: "episode-look-initials" }, frame.initials));
+      frameEl.appendChild(video);
+      frameEl.appendChild(el("div", { class: "episode-look-nameplate" }, frame.name));
+      framesWrap.appendChild(frameEl);
+    });
+    stage.appendChild(framesWrap);
+    stage.appendChild(
+      el(
+        "div",
+        { class: "episode-look-caption", style: `background:${look.theme.accent};` },
+        look.captionText,
+      ),
+    );
+    stage.appendChild(
+      el(
+        "div",
+        { class: "episode-look-meta" },
+        el("span", { class: "episode-look-pacing" }, look.pacingLabel),
+        el("span", { class: "episode-look-format" }, look.captionStyle),
+      ),
+    );
+    preview.appendChild(stage);
+
+    if (previewSize === "hero") {
+      preview.appendChild(
+        el("p", { class: "episode-look-foot" }, `${look.presetName} · ${look.formatCue}`),
+      );
+    }
+
+    return preview;
+  }
 
   function renderLayoutThumb(layoutId, colors) {
     const palette = colors || {};
@@ -3424,6 +3551,9 @@
 
   function renderStylePresetCard(preset, selected, summary) {
     const cues = STY.presetCardSummary(preset);
+    const look = SP
+      ? SP.buildEpisodeLookFromEpisode(preset.id, summary, Object.assign({}, styleSelection, { layout: preset.defaultLayout }))
+      : null;
     const card = el(
       "button",
       {
@@ -3431,10 +3561,7 @@
         class: `preset-card style-preset-card${selected ? " selected" : ""}`,
         "aria-pressed": selected ? "true" : "false",
       },
-      renderLayoutThumb(preset.defaultLayout, {
-        background: preset.background,
-        accent: preset.accent,
-      }),
+      look ? renderEpisodeLookPreview(look, "card") : null,
       el("span", { class: "preset-name" }, preset.name),
       el("span", { class: "preset-tagline" }, preset.tagline),
       el("span", { class: "preset-format-cue" }, cues.formatCue),
@@ -3459,71 +3586,15 @@
     return grid;
   }
 
-  // A live preview built from the real assigned speakers. `compact` renders the smaller
-  // version shown on the workspace once a style is applied.
   function renderPreview(summary, selection, compact) {
-    const preset = STY.getPreset(selection && selection.presetId);
-    const pacing = STY.getPacing(selection && selection.pacing);
-    const frames = STY.buildPreviewFrames(summary.speakers, selection, summary.speakerCount);
-    const layoutId = STY.resolveLayout(selection, summary.speakerCount);
-    const kit = getActiveBrandKit();
-    const theme = BK && kit ? BK.getPreviewTheme(preset, kit) : {
-      background: preset.background,
-      textColor: preset.textColor,
-      accent: preset.accent,
-      captionStyle: preset.captionStyle,
-      typeStyleLabel: "",
-      logoLabel: "",
-    };
-
-    const stage = el("div", {
-      class: `preview-stage stage-${layoutId} pacing-${pacing.id}${compact ? " compact" : ""}`,
-    });
-    stage.style.background = theme.background;
-    stage.style.color = theme.textColor;
-
-    if (theme.logoLabel) {
-      stage.appendChild(el("span", { class: "preview-brand-logo" }, theme.logoLabel));
-    }
-
-    const frameWrap = el("div", { class: "preview-frames" });
-    frames.forEach((frame) => {
-      const frameEl = el(
-        "div",
-        { class: `preview-frame${frame.active ? " active" : ""}` },
-        el("span", { class: "preview-role" }, frame.role),
-        el("span", { class: "preview-name" }, frame.name),
-      );
-      frameEl.style.borderColor = theme.accent;
-      if (frame.active) {
-        frameEl.style.boxShadow = `0 0 0 2px ${theme.accent}`;
-      }
-      frameWrap.appendChild(frameEl);
-    });
-    stage.appendChild(frameWrap);
-
-    const caption = el(
-      "div",
-      { class: "preview-caption" },
-      el("span", { class: "preview-caption-text" }, "Sample caption — this is how on-screen text will look."),
-    );
-    caption.style.background = theme.accent;
-    stage.appendChild(caption);
-
-    if (!compact) {
-      const footParts = [`${pacing.label} pacing`, theme.captionStyle, STY.getLayout(layoutId).label];
-      if (theme.typeStyleLabel) {
-        footParts.unshift(theme.typeStyleLabel);
-      }
-      const foot = el(
-        "p",
-        { class: "preview-foot" },
-        footParts.join(" · "),
-      );
-      const container = el("div", {}, stage, foot);
-      return container;
-    }
-    return stage;
+    const look = SP && STY
+      ? SP.buildEpisodeLookFromEpisode(
+        STY.getPreset(selection && selection.presetId).id,
+        summary,
+        selection,
+      )
+      : null;
+    return renderEpisodeLookPreview(look, compact ? "card" : "hero");
   }
 
   function renderStyle(summary) {
@@ -3544,7 +3615,7 @@
         { class: "workspace-head" },
         el("p", { class: "eyebrow" }, "Choose a style"),
         el("h2", {}, `Pick a look for ${summary.episodeName}`),
-        el("p", { class: "hint" }, "Pick a preset card — each shows the layout thumbnail and format cues. The live preview updates as you choose layout and pacing."),
+        el("p", { class: "hint" }, "Pick a preset card with a full episode preview — layout, captions, and overlay update live on the right."),
       ),
     );
 
