@@ -6,7 +6,7 @@
 // show brand kits (#52), show identity episode start (#57), publish package (#60),
 // transcript correction (#63), episode import before brand setup (#73),
 // and episode import polish (#77, #86, #89), visual style preset cards (#94, #102),
-// and creator template gallery (#106).
+// and creator template gallery (#106), home screen focus (#112).
 (function () {
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
@@ -486,10 +486,10 @@
     if (mode === "library") {
       intro.hidden = false;
       if (heading) {
-        heading.textContent = "Organize episodes by show";
+        heading.textContent = "Start your next episode";
       }
       if (copy) {
-        copy.textContent = "Create a show, then import your recording first — Riverside link or synced speaker files, speaker roles, and social links — before style or brand work.";
+        copy.textContent = "Create a show and import your recording — Riverside link or synced speaker files — then assign speakers before style or brand work.";
       }
       return;
     }
@@ -548,6 +548,73 @@
 
   // ---- Show library view -----------------------------------------------------
 
+  function renderHomeGallerySpotlight() {
+    if (!GAL) {
+      return null;
+    }
+    if (!GAL.listListings(galleryStore).length) {
+      seedGalleryDemoData();
+    }
+    const listings = GAL.listListings(galleryStore);
+    const previewSummary = galleryPreviewSummary("Founders Unfiltered");
+    const section = el(
+      "section",
+      { class: "card show-library-gallery-card home-gallery-spotlight" },
+      el("div", { class: "home-gallery-spotlight-head" },
+        el("h2", { class: "show-library-gallery-title" }, "Creator template gallery"),
+        el(
+          "p",
+          { class: "hint" },
+          "Start from a publish-ready layout — preview speaker frames, captions, and overlays, then apply to your show.",
+        ),
+      ),
+    );
+
+    if (listings.length) {
+      const thumbGrid = el("div", { class: "home-gallery-thumb-grid" });
+      listings.slice(0, 3).forEach((item) => {
+        const listing = GAL.getListing(galleryStore, item.id);
+        const card = el(
+          "button",
+          {
+            type: "button",
+            class: "home-gallery-thumb-card",
+            "aria-label": `Preview ${item.name}`,
+          },
+          renderGalleryPreviewThumb(listing, previewSummary),
+          el("span", { class: "home-gallery-thumb-name" }, item.name),
+          el(
+            "span",
+            { class: "home-gallery-thumb-meta" },
+            item.presetName || (item.previewImage && item.previewImage.presetName) || "Custom layout",
+          ),
+        );
+        card.addEventListener("click", () => {
+          activeGalleryListingId = item.id;
+          renderCreatorGalleryBrowse(null, { returnTo: "library" });
+        });
+        thumbGrid.appendChild(card);
+      });
+      section.appendChild(thumbGrid);
+    }
+
+    const actions = el("div", { class: "home-gallery-spotlight-actions" });
+    const browseBtn = el("button", { type: "button", class: "btn-primary" }, "Browse creator gallery →");
+    browseBtn.addEventListener("click", () => {
+      if (!GAL.listListings(galleryStore).length) {
+        seedGalleryDemoData();
+      }
+      renderCreatorGalleryBrowse(null, { returnTo: "library" });
+    });
+    actions.appendChild(browseBtn);
+
+    const publishLink = el("button", { type: "button", class: "link-button home-gallery-secondary-link" }, "Try publish flow");
+    publishLink.addEventListener("click", () => openPublishGalleryDemo());
+    actions.appendChild(publishLink);
+    section.appendChild(actions);
+    return section;
+  }
+
   function renderShowLibrary() {
     if (!LIB) {
       setPageIntro("episode-setup");
@@ -563,80 +630,54 @@
 
     const header = el(
       "div",
-      { class: "workspace-header" },
+      { class: "workspace-header home-screen-header" },
       el("h1", {}, "Show Library"),
       el("p", { class: "hint" }, summary.libraryLine),
     );
 
-    const newShowBtn = el("button", { class: "btn-primary", type: "button" }, "+ New show");
-    newShowBtn.addEventListener("click", () => renderNewShowForm());
-
-    const blankEpisodeBtn = el("button", { class: "btn-secondary", type: "button" }, "Start blank episode");
-    blankEpisodeBtn.addEventListener("click", () => startBlankEpisode());
-
-    const styleDemoBtn = el("button", { class: "btn-primary", type: "button" }, "Try style preset cards →");
-    styleDemoBtn.addEventListener("click", () => openStylePickerDemo());
-
-    const galleryDemoBtn = GAL
-      ? el("button", { class: "btn-primary", type: "button" }, "Gallery walkthrough →")
-      : null;
-    if (galleryDemoBtn) {
-      galleryDemoBtn.addEventListener("click", () => openGalleryDemo());
-    }
-
-    const galleryBtn = GAL
-      ? el("button", { class: "btn-secondary", type: "button" }, "Creator template gallery →")
-      : null;
-    if (galleryBtn) {
-      galleryBtn.addEventListener("click", () => {
-        if (!GAL.listListings(galleryStore).length) {
-          seedGalleryDemoData();
-        }
-        renderCreatorGalleryBrowse(null, { returnTo: "library" });
-      });
-    }
-
-    const actions = el(
-      "div",
-      { class: "workspace-actions" },
-      newShowBtn,
-      styleDemoBtn,
-      galleryDemoBtn,
-      galleryBtn,
-      blankEpisodeBtn,
+    const startHero = el(
+      "section",
+      { class: "card home-start-hero" },
+      el("p", { class: "eyebrow" }, "Recommended start"),
+      el("h2", { class: "home-start-title" }, "Create a show and import your first episode"),
+      el(
+        "p",
+        { class: "hint home-start-lead" },
+        "The main path: name your show, bring in a Riverside link or synced speaker files, assign Host and guests, then choose a look.",
+      ),
     );
+    const primaryStartBtn = el(
+      "button",
+      { class: "btn-primary home-primary-cta", type: "button" },
+      "Create show & import episode →",
+    );
+    primaryStartBtn.addEventListener("click", () => renderNewShowForm());
+    startHero.appendChild(primaryStartBtn);
 
-    const galleryCard = GAL
-      ? el(
-          "section",
-          { class: "card show-library-gallery-card" },
-          el("h2", { class: "show-library-gallery-title" }, "Creator template gallery"),
-          el(
-            "p",
-            { class: "hint" },
-            "Publish saved layouts with name, description, style tags, and preview image. Other shows browse, preview on the episode canvas, and apply frames, captions, overlays, and brand styling.",
-          ),
-          el(
-            "div",
-            { class: "template-library-actions" },
-            (() => {
-              const browseBtn = el("button", { type: "button", class: "ghost" }, "Browse creator gallery →");
-              browseBtn.addEventListener("click", () => {
-                if (!GAL.listListings(galleryStore).length) {
-                  seedGalleryDemoData();
-                }
-                renderCreatorGalleryBrowse(null, { returnTo: "library" });
-              });
-              return browseBtn;
-            })(),
-            (() => {
-              const publishBtn = el("button", { type: "button", class: "ghost" }, "Try publish flow →");
-              publishBtn.addEventListener("click", () => openPublishGalleryDemo());
-              return publishBtn;
-            })(),
-          ),
-        )
-      : null;
+    const secondaryLinks = el("div", { class: "home-secondary-links" });
+    const blankEpisodeLink = el("button", { class: "link-button", type: "button" }, "Start blank episode");
+    blankEpisodeLink.addEventListener("click", () => startBlankEpisode());
+    secondaryLinks.appendChild(blankEpisodeLink);
+    startHero.appendChild(secondaryLinks);
+
+    const exploreSection = el(
+      "section",
+      { class: "card home-explore-panel" },
+      el("h3", { class: "home-explore-title" }, "Explore"),
+      el("p", { class: "hint" }, "Optional demos — the core workflow above is the fastest path to a polished episode."),
+    );
+    const exploreLinks = el("div", { class: "home-explore-links" });
+    const styleDemoLink = el("button", { class: "link-button", type: "button" }, "Try style preset cards");
+    styleDemoLink.addEventListener("click", () => openStylePickerDemo());
+    exploreLinks.appendChild(styleDemoLink);
+    if (GAL) {
+      const galleryWalkthroughLink = el("button", { class: "link-button", type: "button" }, "Gallery walkthrough");
+      galleryWalkthroughLink.addEventListener("click", () => openGalleryDemo());
+      exploreLinks.appendChild(galleryWalkthroughLink);
+    }
+    exploreSection.appendChild(exploreLinks);
+
+    const galleryCard = renderHomeGallerySpotlight();
 
     const listEl = el("div", { class: "show-library-list" });
 
@@ -694,7 +735,15 @@
       });
     }
 
-    const view = el("div", { class: "workspace-root" }, header, actions, galleryCard, listEl);
+    const view = el(
+      "div",
+      { class: "workspace-root home-screen" },
+      header,
+      startHero,
+      galleryCard,
+      exploreSection,
+      listEl,
+    );
     root.appendChild(view);
   }
 
