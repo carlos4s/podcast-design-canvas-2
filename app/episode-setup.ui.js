@@ -4,7 +4,8 @@
 // preset style (#4), canvas editor (#11), visual moments (#19), social context (#34),
 // publish review (#37), guided workspace (#40), export (#30), show library (#47),
 // show brand kits (#52), show identity episode start (#57), publish package (#60),
-// and transcript correction (#63), and episode import before brand setup (#73).
+// transcript correction (#63), episode import before brand setup (#73),
+// and episode import polish (#77).
 (function () {
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
@@ -438,7 +439,7 @@
 
     const form = el(
       "div",
-      { class: "card" },
+      { class: "card create-show-form" },
       el("h2", {}, "Create new show"),
       el(
         "div",
@@ -462,7 +463,7 @@
     const cancelBtn = el("button", { class: "btn-secondary", type: "button" }, "Cancel");
     cancelBtn.addEventListener("click", () => renderShowLibrary());
 
-    const saveBtn = el("button", { class: "btn-primary", type: "button" }, "Create show & import episode →");
+    const saveBtn = el("button", { class: "btn-primary create-show-continue-btn", type: "button" }, "Create show & import episode →");
     saveBtn.addEventListener("click", () => {
       const name = nameInput.value;
       const check = LIB.validateShowName(showLibrary, name);
@@ -482,7 +483,7 @@
       startEpisodeFromShow(show.id);
     });
 
-    const footer = el("div", { class: "workspace-actions" }, cancelBtn, saveBtn);
+    const footer = el("div", { class: "workspace-actions setup-cta-bar" }, cancelBtn, saveBtn);
     root.appendChild(el("div", { class: "workspace-root" }, form, footer));
   }
 
@@ -802,11 +803,25 @@
     setStep("Step 1 of 8 · Set up episode");
     state.sourceMode = ES.normalizeMode(state.sourceMode);
 
-    const form = el("form", { class: "setup", novalidate: true });
+    const form = el("form", { class: "setup setup-import", novalidate: true });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       onContinue();
     });
+
+    form.appendChild(
+      el(
+        "div",
+        { class: "setup-import-head" },
+        el("p", { class: "eyebrow" }, "Episode import"),
+        el("h2", {}, "Set up your recording and speakers"),
+        el(
+          "p",
+          { class: "hint" },
+          "Import your synced sources, assign each speaker, and add social links — then continue to audio polish and style.",
+        ),
+      ),
+    );
 
     const identityBanner = renderShowIdentityBanner();
     if (identityBanner) {
@@ -854,8 +869,9 @@
 
     const detailsCard = el(
       "section",
-      { class: "card" },
+      { class: "card setup-section" },
       el("h2", {}, "Episode details"),
+      el("p", { class: "hint setup-section-lead" }, "Name this episode so it is easy to find in your show library."),
       field("Episode name", nameInput, "episodeName"),
     );
     form.appendChild(detailsCard);
@@ -879,9 +895,9 @@
 
     const sourceCard = el(
       "section",
-      { class: "card" },
+      { class: "card setup-section" },
       el("h2", {}, "Recording source"),
-      el("p", { class: "hint" }, "Bring in your recording, then assign each track to a speaker below."),
+      el("p", { class: "hint setup-section-lead" }, "Choose how you recorded — Riverside link or separate synced speaker files."),
       el("div", { class: "mode-row" }, modeButtons),
     );
 
@@ -907,10 +923,22 @@
     form.appendChild(sourceCard);
 
     // Speakers & sources
-    const speakersCard = el("section", { class: "card" }, el("h2", {}, "Speakers & sources"));
+    const speakerStack = el("div", { class: "speaker-stack" });
     state.speakers.forEach((speaker, index) => {
-      speakersCard.appendChild(renderSpeaker(speaker, index));
+      speakerStack.appendChild(renderSpeaker(speaker, index));
     });
+
+    const speakersCard = el(
+      "section",
+      { class: "card setup-section setup-speakers-card" },
+      el("h2", {}, "Speakers & sources"),
+      el(
+        "p",
+        { class: "hint setup-section-lead" },
+        "One card per speaker — assign Host, Guest 1, or Guest 2 and attach each synced source.",
+      ),
+      speakerStack,
+    );
 
     const addButton = el("button", { type: "button", class: "ghost" }, "+ Add speaker source");
     addButton.addEventListener("click", () => {
@@ -930,11 +958,11 @@
     form.appendChild(
       el(
         "div",
-        { class: "actions setup-actions" },
+        { class: "actions setup-actions setup-cta-bar" },
         activeShowId
-          ? el("button", { type: "button", class: "ghost", id: "setup-back-show" }, "← Back to show")
+          ? el("button", { type: "button", class: "btn-secondary", id: "setup-back-show" }, "← Back to show")
           : null,
-        el("button", { type: "submit", class: "primary" }, "Continue to audio polish →"),
+        el("button", { type: "submit", class: "btn-primary setup-continue-btn" }, "Continue to audio polish →"),
       ),
     );
 
@@ -950,7 +978,7 @@
   }
 
   function renderSpeaker(speaker, index) {
-    const card = el("div", { class: "speaker" });
+    const card = el("article", { class: "speaker speaker-card" });
     const header = el(
       "div",
       { class: "speaker-head" },
@@ -971,6 +999,9 @@
     header.appendChild(removeButton);
     card.appendChild(header);
 
+    const body = el("div", { class: "speaker-body" });
+    const core = el("div", { class: "speaker-core" });
+
     // Name
     const nameInput = el("input", {
       id: `f-sp-${index}-name`,
@@ -982,7 +1013,7 @@
     nameInput.addEventListener("input", (e) => {
       speaker.name = e.target.value;
     });
-    card.appendChild(field("Speaker name", nameInput, `speaker:${index}:name`));
+    core.appendChild(field("Speaker name", nameInput, `speaker:${index}:name`));
 
     // Role bucket
     const roleSelect = el("select", {
@@ -996,9 +1027,11 @@
     roleSelect.addEventListener("change", (e) => {
       speaker.role = e.target.value;
     });
-    card.appendChild(field("Role", roleSelect, `speaker:${index}:role`));
+    core.appendChild(field("Role", roleSelect, `speaker:${index}:role`));
+    body.appendChild(core);
 
     // Source: file (upload) or optional channel label (riverside)
+    const sourceBlock = el("div", { class: "speaker-source-block" });
     if (state.sourceMode === "upload") {
       const fileInput = el("input", {
         id: `f-sp-${index}-source`,
@@ -1017,8 +1050,8 @@
         speaker.fileSize = file ? file.size : 0;
         chosen.textContent = speaker.fileName ? `Selected: ${speaker.fileName}` : "No file chosen yet";
       });
-      card.appendChild(field("Speaker video file", fileInput, `speaker:${index}:source`));
-      card.appendChild(chosen);
+      sourceBlock.appendChild(field("Speaker video file", fileInput, `speaker:${index}:source`));
+      sourceBlock.appendChild(chosen);
     } else {
       const trackInput = el("input", {
         id: `f-sp-${index}-source`,
@@ -1029,8 +1062,9 @@
       trackInput.addEventListener("input", (e) => {
         speaker.trackLabel = e.target.value;
       });
-      card.appendChild(field("Channel label", trackInput, null, "Optional — name this speaker's channel in the recording."));
+      sourceBlock.appendChild(field("Channel label", trackInput, null, "Optional — name this speaker's channel in the recording."));
     }
+    body.appendChild(sourceBlock);
 
     // Optional social links
     const social = el("details", { class: "social" });
@@ -1054,7 +1088,8 @@
       });
       social.appendChild(field(net.label, input, `speaker:${index}:social:${net.key}`));
     });
-    card.appendChild(social);
+    body.appendChild(social);
+    card.appendChild(body);
 
     return card;
   }

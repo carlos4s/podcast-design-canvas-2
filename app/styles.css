@@ -200,17 +200,38 @@ input[type="file"] {
 
 .speaker {
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px 18px;
-  margin-bottom: 14px;
+  border-radius: 14px;
+  padding: 22px 24px;
+  margin-bottom: 0;
   background: #fcfcff;
+  box-shadow: 0 1px 0 rgba(20, 16, 60, 0.04);
 }
 
 .speaker-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.speaker-body {
+  display: grid;
+  gap: 18px;
+}
+
+.speaker-core {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.speaker-source-block {
+  display: grid;
+  gap: 8px;
 }
 
 .speaker-tag {
@@ -224,13 +245,13 @@ input[type="file"] {
 .chosen-file {
   font-size: 13px;
   color: var(--ink-soft);
-  margin: -8px 0 14px;
+  margin: 0;
 }
 
 .social {
-  margin-top: 6px;
+  margin-top: 4px;
   border-top: 1px dashed var(--line);
-  padding-top: 12px;
+  padding-top: 16px;
 }
 
 .social summary {
@@ -258,16 +279,41 @@ button:disabled {
   opacity: 0.55;
 }
 
+/* Shared forward/back CTA hierarchy (#77) */
+.btn-primary,
+button.primary,
 .primary {
   background: var(--brand);
   color: var(--brand-ink);
   box-shadow: var(--shadow);
+  border-color: transparent;
 }
 
+.btn-primary:hover,
+button.primary:hover,
+.primary:hover {
+  filter: brightness(1.04);
+}
+
+.btn-secondary,
+button.ghost,
 .ghost {
   background: transparent;
   border-color: var(--line);
   color: var(--ink);
+}
+
+.btn-secondary:hover,
+button.ghost:hover,
+.ghost:hover {
+  background: rgba(108, 76, 255, 0.04);
+}
+
+.setup-continue-btn,
+.create-show-continue-btn {
+  min-width: min(100%, 280px);
+  padding: 13px 22px;
+  font-size: 15px;
 }
 
 .link-button {
@@ -1657,8 +1703,161 @@ button:disabled {
 .setup-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
+  justify-content: flex-start;
+}
+
+/* ---- Episode import polish (#77) ---- */
+.setup-import {
+  display: grid;
+  gap: 0;
+}
+
+.setup-import .card {
+  margin-bottom: 24px;
+}
+
+.setup-import .card:last-of-type {
+  margin-bottom: 28px;
+}
+
+.setup-import-head .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand);
+  margin: 0 0 6px;
+}
+
+.setup-import-head h2 {
+  font-size: clamp(24px, 3.5vw, 30px);
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+
+.setup-section .field:last-child {
+  margin-bottom: 0;
+}
+
+.setup-section .field {
+  margin-bottom: 18px;
+}
+
+.setup-import-head {
+  margin-bottom: 8px;
+}
+
+.setup-import-head .hint {
+  max-width: 62ch;
+  margin-bottom: 0;
+}
+
+.setup-section-lead {
+  margin: -4px 0 16px;
+  max-width: 58ch;
+}
+
+.setup-speakers-card .speaker-stack {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.setup-speakers-card .ghost {
+  width: 100%;
+  justify-self: start;
+}
+
+.setup-cta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 20px 0 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.setup-cta-bar .btn-primary,
+.setup-cta-bar .setup-continue-btn {
+  margin-left: auto;
+}
+
+.create-show-form .hint:last-of-type {
+  margin-bottom: 0;
+}
+
+@media (max-width: 720px) {
+  main {
+    padding: 8px 18px 48px;
+  }
+
+  .topbar {
+    padding: 14px 18px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .card {
+    padding: 18px 16px;
+  }
+
+  .speaker {
+    padding: 18px 16px;
+  }
+
+  .speaker-core {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-row {
+    flex-direction: column;
+  }
+
+  .mode-option {
+    width: 100%;
+  }
+
+  .setup-cta-bar .btn-primary,
+  .setup-cta-bar .setup-continue-btn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .setup-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .setup-actions .btn-primary,
+  .setup-actions .setup-continue-btn,
+  .setup-actions .ghost {
+    width: 100%;
+  }
+
+  .show-library-card {
+    flex-direction: column;
+  }
+
+  .show-library-card-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .show-library-card-actions .btn-primary,
+  .show-library-card-actions .btn-secondary {
+    flex: 1 1 auto;
+  }
+}
+
+@media (min-width: 721px) {
+  .setup-import {
+    max-width: 760px;
+  }
 }
 
 .brand-kit-line {
