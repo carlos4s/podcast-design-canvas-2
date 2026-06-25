@@ -1,7 +1,8 @@
 "use strict";
 
 // Browser wiring for episode setup (#1), social context (#34), audio polish (#15),
-// preset style (#4), canvas editor (#11), visual moments (#19), and export (#30).
+// preset style (#4), canvas editor (#11), visual moments (#19), social context (#34),
+// publish review (#37), and export (#30).
 (function () {
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
@@ -12,6 +13,7 @@
   const VM = window.PdcVisualMoments;
   const SC = window.PdcSocialContext;
   const EXP = window.PdcEpisodeExport;
+  const PR = window.PdcPublishReview;
   const root = document.getElementById("app");
   const stepPill = document.querySelector(".step-pill");
   if (!ES || !root) {
@@ -41,6 +43,8 @@
   const MOMENTS_STORAGE_KEY = "pdc-visual-moments";
   let contextReview = null;
   let contextApproved = false;
+  let publishReview = null;
+  let publishReviewApproved = false;
 
   function safeLoadMoments() {
     try {
@@ -186,7 +190,7 @@
 
   function renderSetup() {
     root.innerHTML = "";
-    setStep("Step 1 of 7 · Set up episode");
+    setStep("Step 1 of 8 · Set up episode");
     state.sourceMode = ES.normalizeMode(state.sourceMode);
 
     const form = el("form", { class: "setup", novalidate: true });
@@ -473,6 +477,68 @@
 
   // ---- Workspace summary view -------------------------------------------------
 
+  function buildReviewContext(summary) {
+    const exportCtx = buildExportContext(summary);
+    return Object.assign({}, exportCtx, {
+      contextApproved: contextApproved,
+      hasCanvas: Boolean(canvasDoc),
+      momentsBoard: momentsBoard,
+      captionCount: PR ? PR.countVisibleCaptions(momentsBoard) : 0,
+    });
+  }
+
+  function refreshPublishReview(summary) {
+    if (!PR) {
+      return null;
+    }
+    const next = PR.createReview(summary, buildReviewContext(summary));
+    if (publishReview && publishReview.approved) {
+      if (PR.canApprove(next)) {
+        next.approved = true;
+        next.approvedAt = publishReview.approvedAt;
+      } else {
+        publishReviewApproved = false;
+      }
+    }
+    publishReview = next;
+    publishReviewApproved = Boolean(publishReview.approved);
+    return publishReview;
+  }
+
+  function navigateReviewFix(target, summary) {
+    if (target === "setup") {
+      renderSetup();
+      return;
+    }
+    if (target === "context") {
+      if (!contextReview) {
+        contextReview = SC.createReview(summary);
+      }
+      renderContextReview(summary);
+      return;
+    }
+    if (target === "audio") {
+      if (!audioPolish) {
+        audioPolish = AP.createPolish(summary);
+      }
+      renderAudioPolish(summary);
+      return;
+    }
+    if (target === "style") {
+      renderStyle(summary);
+      return;
+    }
+    if (target === "canvas") {
+      openCanvasEditor(summary);
+      return;
+    }
+    if (target === "moments") {
+      renderVisualMoments(summary);
+      return;
+    }
+    renderWorkspace(summary);
+  }
+
   function applyContextEffects() {
     if (!SC || !contextReview || !contextReview.approved) {
       return;
@@ -507,7 +573,7 @@
 
   function renderWorkspace(summary) {
     root.innerHTML = "";
-    setStep("Step 1 of 7 · Episode workspace");
+    setStep("Step 1 of 8 · Episode workspace");
 
     const view = el("div", { class: "workspace" });
     view.appendChild(
@@ -744,15 +810,29 @@
     }
     const exportAvailable = Boolean(EXP);
     const exportReady = exportAvailable && EXP.validateReadiness(buildExportContext(summary)).ok;
+    const reviewAvailable = Boolean(PR && exportReady);
+    refreshPublishReview(summary);
+    const reviewButton = el(
+      "button",
+      { type: "button", class: publishReviewApproved ? "ghost" : "primary", disabled: reviewAvailable ? null : true },
+      publishReviewApproved ? "View publish review →" : "Review episode →",
+    );
+    if (reviewAvailable) {
+      reviewButton.addEventListener("click", () => renderPublishReview(summary));
+    }
     const exportButton = el(
       "button",
-      { type: "button", class: exportReady ? "primary" : "ghost", disabled: exportAvailable ? null : true },
+      { type: "button", class: publishReviewApproved && exportReady ? "primary" : "ghost", disabled: exportAvailable && publishReviewApproved && exportReady ? null : true },
       exportJob && exportJob.status === "ready" ? "View export →" : "Export episode →",
     );
     if (exportAvailable) {
       exportButton.addEventListener("click", () => renderExport(summary));
     }
-    const nextTitle = exportJob && exportJob.status === "ready"
+    const nextTitle = publishReviewApproved
+      ? exportJob && exportJob.status === "ready"
+        ? "Export complete"
+        : "Review approved"
+      : exportJob && exportJob.status === "ready"
       ? "Export complete"
       : activeTemplateId
       ? "Template saved"
@@ -761,7 +841,11 @@
         : appliedAudioPolish
           ? "Audio polished"
           : "Ready for the next step";
-    const nextCopy = exportJob && exportJob.status === "ready"
+    const nextCopy = publishReviewApproved
+      ? "Your episode passed the publish review. Export when you are ready."
+      : exportReady
+        ? "Run the full-episode publish review before exporting."
+        : exportJob && exportJob.status === "ready"
       ? `Your episode is ready to download as ${exportJob.downloadName}.`
       : activeTemplateId
       ? "Your show template is saved and ready for the next episode."
@@ -787,7 +871,10 @@
     if (visualAvailable) {
       actions.appendChild(visualButton);
     }
-    if (exportAvailable && exportReady) {
+    if (reviewAvailable) {
+      actions.appendChild(reviewButton);
+    }
+    if (exportAvailable && publishReviewApproved && exportReady) {
       actions.appendChild(exportButton);
     }
     actions.appendChild(
@@ -797,6 +884,8 @@
           showErrors = false;
           contextApproved = false;
           contextReview = null;
+          publishReviewApproved = false;
+          publishReview = null;
           renderSetup();
         });
         return back;
@@ -823,15 +912,133 @@
     view.scrollIntoView({ block: "start" });
   }
 
+  // ---- Publish review (#37) -------------------------------------------------
+
+  function renderPublishReview(summary) {
+    if (!PR) {
+      renderWorkspace(summary);
+      return;
+    }
+    refreshPublishReview(summary);
+    root.innerHTML = "";
+    setStep("Step 7 of 8 · Publish review");
+
+    const view = el("div", { class: "publish-review-step" });
+    view.appendChild(
+      el("div", { class: "workspace-head" },
+        el("p", { class: "eyebrow" }, "Publish review"),
+        el("h2", {}, `Review ${summary.episodeName} before export`),
+        el(
+          "p",
+          { class: "hint" },
+          "Walk the full episode from setup through visual moments. Fix required items, then approve when you are confident the long-form result is publish-ready.",
+        ),
+      ),
+    );
+
+    const grid = el("div", { class: "publish-review-layout" });
+
+    const timelineCard = el("section", { class: "card" }, el("h3", {}, "Episode timeline"));
+    const timeline = el("div", { class: "publish-review-timeline" });
+    publishReview.timeline.forEach((section) => {
+      timeline.appendChild(
+        el(
+          "div",
+          { class: `publish-review-section publish-review-${section.status}` },
+          el("span", { class: "publish-review-time" }, section.time),
+          el("span", { class: "publish-review-label" }, section.label),
+          el("span", { class: "publish-review-summary" }, section.summary),
+        ),
+      );
+    });
+    timelineCard.appendChild(timeline);
+    grid.appendChild(timelineCard);
+
+    const checksCard = el("section", { class: "card" }, el("h3", {}, "Quality checks"));
+    const reviewMeta = PR.summarizeReview(publishReview);
+    checksCard.appendChild(el("p", { class: "publish-review-meta" }, reviewMeta.reviewLine));
+
+    const checksList = el("div", { class: "publish-review-checks" });
+    publishReview.checks.forEach((item) => {
+      if (item.tone === "ok") {
+        return;
+      }
+      const row = el(
+        "div",
+        { class: `publish-review-check publish-review-check-${item.tone}` },
+        el("strong", {}, item.title),
+        el("p", {}, item.message),
+      );
+      if (item.action && item.action.label) {
+        const fixButton = el("button", { type: "button", class: "ghost" }, item.action.label);
+        fixButton.addEventListener("click", () => navigateReviewFix(item.action.target, summary));
+        row.appendChild(fixButton);
+      }
+      checksList.appendChild(row);
+    });
+    if (!checksList.childNodes.length) {
+      checksList.appendChild(el("p", { class: "hint" }, "Everything looks good — approve when you are ready to export."));
+    }
+    checksCard.appendChild(checksList);
+
+    const passed = el("div", { class: "publish-review-passed" });
+    publishReview.checks.filter((item) => item.tone === "ok").forEach((item) => {
+      passed.appendChild(el("p", { class: "publish-review-ok" }, `✓ ${item.title}`));
+    });
+    checksCard.appendChild(passed);
+    grid.appendChild(checksCard);
+    view.appendChild(grid);
+
+    const approveError = el("p", { class: "field-error", role: "alert", hidden: true });
+    const approveButton = el(
+      "button",
+      {
+        type: "button",
+        class: "primary",
+        disabled: publishReviewApproved || !PR.canApprove(publishReview) ? true : null,
+      },
+      publishReviewApproved ? "Approved for export" : "Approve for export →",
+    );
+    approveButton.addEventListener("click", () => {
+      const result = PR.approveReview(publishReview);
+      if (!result.ok) {
+        approveError.hidden = false;
+        approveError.textContent = result.error;
+        return;
+      }
+      publishReview = result.review;
+      publishReviewApproved = true;
+      approveError.hidden = true;
+      renderPublishReview(summary);
+    });
+
+    const exportButton = el(
+      "button",
+      { type: "button", class: "ghost", disabled: publishReviewApproved ? null : true },
+      "Continue to export →",
+    );
+    exportButton.addEventListener("click", () => renderExport(summary));
+
+    const back = el("button", { type: "button", class: "ghost" }, "← Back to workspace");
+    back.addEventListener("click", () => renderWorkspace(summary));
+    view.appendChild(approveError);
+    view.appendChild(el("div", { class: "actions" }, approveButton, exportButton, back));
+
+    root.appendChild(view);
+    view.scrollIntoView({ block: "start" });
+  }
+
   // ---- Export & publish (#30) -------------------------------------------------
 
   function renderExport(summary) {
     root.innerHTML = "";
-    setStep("Step 7 of 7 · Export & publish");
+    setStep("Step 8 of 8 · Export & publish");
     if (!EXP) {
       return;
     }
 
+    refreshPublishReview(summary);
+    const reviewGate = PR ? PR.validateExportGate(publishReview) : { ok: true };
     const ctx = buildExportContext(summary);
     const readiness = EXP.validateReadiness(ctx);
     if (!exportJob) {
@@ -848,9 +1055,28 @@
         { class: "workspace-head" },
         el("p", { class: "eyebrow" }, "Export & publish"),
         el("h2", {}, `Publish ${summary.episodeName}`),
-        el("p", { class: "hint" }, "Review your episode, choose publishing options, and export a long-form video ready to upload."),
+        el("p", { class: "hint" }, "Choose publishing options and export a long-form video ready to upload."),
       ),
     );
+
+    if (!reviewGate.ok) {
+      view.appendChild(
+        el(
+          "section",
+          { class: "card export-blocked" },
+          el("h3", {}, "Publish review required"),
+          el("p", { class: "field-error" }, reviewGate.error),
+        ),
+      );
+      const toReview = el("button", { type: "button", class: "primary" }, "Open publish review →");
+      toReview.addEventListener("click", () => renderPublishReview(summary));
+      const backBlocked = el("button", { type: "button", class: "ghost" }, "← Back to workspace");
+      backBlocked.addEventListener("click", () => renderWorkspace(summary));
+      view.appendChild(el("div", { class: "actions" }, toReview, backBlocked));
+      root.appendChild(view);
+      view.scrollIntoView({ block: "start" });
+      return;
+    }
 
     if (!readiness.ok) {
       view.appendChild(
@@ -1191,7 +1417,7 @@
       canvasDoc = CE.createFromStyle(appliedStyle, summary, styleSelection);
     }
     root.innerHTML = "";
-    setStep("Step 5 of 7 · Canvas editor");
+    setStep("Step 5 of 8 · Canvas editor");
 
     const evaluation = CL.evaluateLayout(canvasDoc.layers);
     const view = el("div", { class: "canvas-step" });
@@ -1344,7 +1570,7 @@
       contextReview = SC.createReview(summary);
     }
     root.innerHTML = "";
-    setStep("Step 2 of 7 · Review context");
+    setStep("Step 2 of 8 · Review context");
 
     const view = el("div", { class: "context-step" });
     view.appendChild(
@@ -1417,7 +1643,7 @@
       audioPolish = AP.createPolish(summary);
     }
     root.innerHTML = "";
-    setStep("Step 3 of 7 · Audio polish");
+    setStep("Step 3 of 8 · Audio polish");
 
     const view = el("div", { class: "audio-step" });
     view.appendChild(
@@ -1634,7 +1860,7 @@
   function renderVisualMoments(summary) {
     ensureMomentsBoard(summary);
     root.innerHTML = "";
-    setStep("Step 6 of 7 · Visual moments");
+    setStep("Step 6 of 8 · Visual moments");
 
     const list = VM.listMoments(momentsBoard);
     // Keep the selected moment valid; default to the first moment so a preview is shown.
@@ -1812,7 +2038,7 @@
 
   function renderStyle(summary) {
     root.innerHTML = "";
-    setStep("Step 4 of 7 · Choose a style");
+    setStep("Step 4 of 8 · Choose a style");
     if (!styleSelection) {
       styleSelection = STY.createSelection();
     }
