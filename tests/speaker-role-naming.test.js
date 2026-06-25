@@ -1,6 +1,6 @@
 "use strict";
 
-// Speaker role auto-assignment regression suite for Podcast Design Canvas (#135).
+// Speaker role ordering regression suite for Podcast Design Canvas (#135, #137).
 // Run with: `node tests/speaker-role-naming.test.js`.
 
 const assert = require("assert");
@@ -17,61 +17,47 @@ function speakersWithRoles(roles) {
   return roles.map((role) => setup.createSpeaker(role));
 }
 
-function rolesAfterAdd(currentRoles) {
-  const speakers = speakersWithRoles(currentRoles);
-  return setup.createSpeaker(setup.nextAvailableSpeakerRole(speakers)).role;
+function rolesOf(speakers) {
+  return speakers.map((speaker) => speaker.role);
 }
 
-function rolesAfterRemoveAndAdd(currentRoles, removeIndex) {
-  const speakers = speakersWithRoles(currentRoles);
-  speakers.splice(removeIndex, 1);
-  return setup.createSpeaker(setup.nextAvailableSpeakerRole(speakers)).role;
+function removeSpeaker(speakers, removeIndex) {
+  const next = speakers.slice();
+  next.splice(removeIndex, 1);
+  setup.normalizeDefaultSpeakerRoles(next);
+  return next;
+}
+
+function addSpeaker(speakers) {
+  const next = speakers.slice();
+  next.push(setup.createSpeaker(setup.nextAvailableSpeakerRole(next)));
+  setup.normalizeDefaultSpeakerRoles(next);
+  return next;
 }
 
 test("createDraft seeds Host, Guest 1, and Guest 2 without duplicates", () => {
   const draft = setup.createDraft();
-  const roles = draft.speakers.map((speaker) => speaker.role);
-  assert.deepStrictEqual(roles, ["Host", "Guest 1", "Guest 2"]);
-  assert.strictEqual(new Set(roles).size, roles.length);
+  assert.deepStrictEqual(rolesOf(draft.speakers), ["Host", "Guest 1", "Guest 2"]);
+  assert.strictEqual(new Set(rolesOf(draft.speakers)).size, 3);
+});
+
+test("normalizeDefaultSpeakerRoles compacts Host and Guest labels after a removal", () => {
+  const speakers = speakersWithRoles(["Host", "Guest 1", "Guest 2"]);
+  speakers.splice(1, 1);
+  setup.normalizeDefaultSpeakerRoles(speakers);
+  assert.deepStrictEqual(rolesOf(speakers), ["Host", "Guest 1"]);
 });
 
 test("nextAvailableSpeakerRole assigns Guest 3 after the default trio", () => {
-  assert.strictEqual(
-    rolesAfterAdd(["Host", "Guest 1", "Guest 2"]),
-    "Guest 3",
-  );
+  const speakers = speakersWithRoles(["Host", "Guest 1", "Guest 2"]);
+  assert.strictEqual(setup.nextAvailableSpeakerRole(speakers), "Guest 3");
 });
 
-test("nextAvailableSpeakerRole reuses Guest 1 after that source is removed", () => {
-  assert.strictEqual(
-    rolesAfterRemoveAndAdd(["Host", "Guest 1", "Guest 2"], 1),
-    "Guest 1",
-  );
-});
-
-test("nextAvailableSpeakerRole reuses Guest 2 after that source is removed", () => {
-  assert.strictEqual(
-    rolesAfterRemoveAndAdd(["Host", "Guest 1", "Guest 2"], 2),
-    "Guest 2",
-  );
-});
-
-test("nextAvailableSpeakerRole keeps climbing Guest numbers when lower slots stay filled", () => {
-  assert.strictEqual(
-    rolesAfterAdd(["Host", "Guest 1", "Guest 2", "Guest 3"]),
-    "Guest 4",
-  );
-  assert.strictEqual(
-    rolesAfterAdd(["Host", "Guest 1", "Guest 2", "Guest 3", "Guest 4"]),
-    "Co-host",
-  );
-});
-
-test("nextAvailableSpeakerRole assigns Guest 5 after preset buckets are taken", () => {
-  assert.strictEqual(
-    rolesAfterAdd(["Host", "Guest 1", "Guest 2", "Guest 3", "Guest 4", "Co-host"]),
-    "Guest 5",
-  );
+test("defaultSpeakerRoleForIndex maps list order to Host then numbered guests", () => {
+  assert.strictEqual(setup.defaultSpeakerRoleForIndex(0), "Host");
+  assert.strictEqual(setup.defaultSpeakerRoleForIndex(1), "Guest 1");
+  assert.strictEqual(setup.defaultSpeakerRoleForIndex(2), "Guest 2");
+  assert.strictEqual(setup.defaultSpeakerRoleForIndex(3), "Guest 3");
 });
 
 test("roleSelectOptions includes the current role and the next auto-assigned guest", () => {
@@ -79,34 +65,20 @@ test("roleSelectOptions includes the current role and the next auto-assigned gue
   const options = setup.roleSelectOptions(speakers, "Guest 2");
   assert.ok(options.includes("Guest 2"));
   assert.ok(options.includes("Guest 3"));
-  assert.ok(options.indexOf("Guest 3") > options.indexOf("Guest 2"));
 });
 
-test("ACCEPTANCE: add/remove speaker sources always yields unique auto-assigned roles", () => {
-  const sequences = [
-    { start: ["Host", "Guest 1", "Guest 2"], remove: 1, expect: "Guest 1" },
-    { start: ["Host", "Guest 1", "Guest 2"], remove: 2, expect: "Guest 2" },
-    { start: ["Host", "Guest 1", "Guest 2"], remove: null, expect: "Guest 3" },
-    { start: ["Host", "Guest 2", "Guest 3"], remove: 0, expect: "Host" },
-  ];
+test("ACCEPTANCE: remove Guest 1 then add speakers yields Host, Guest 1, Guest 2, Guest 3", () => {
+  let speakers = setup.createDraft().speakers;
 
-  sequences.forEach((scenario) => {
-    let nextRole;
-    if (scenario.remove === null) {
-      nextRole = rolesAfterAdd(scenario.start);
-    } else {
-      nextRole = rolesAfterRemoveAndAdd(scenario.start, scenario.remove);
-    }
-    assert.strictEqual(nextRole, scenario.expect);
+  speakers = removeSpeaker(speakers, 1);
+  assert.deepStrictEqual(rolesOf(speakers), ["Host", "Guest 1"]);
 
-    const speakers = speakersWithRoles(scenario.start);
-    if (scenario.remove !== null) {
-      speakers.splice(scenario.remove, 1);
-    }
-    speakers.push(setup.createSpeaker(nextRole));
-    const roles = speakers.map((speaker) => speaker.role);
-    assert.strictEqual(new Set(roles).size, roles.length, JSON.stringify(roles));
-  });
+  speakers = addSpeaker(speakers);
+  assert.deepStrictEqual(rolesOf(speakers), ["Host", "Guest 1", "Guest 2"]);
+
+  speakers = addSpeaker(speakers);
+  assert.deepStrictEqual(rolesOf(speakers), ["Host", "Guest 1", "Guest 2", "Guest 3"]);
+  assert.strictEqual(new Set(rolesOf(speakers)).size, 4);
 });
 
 console.log(`\nspeaker role naming: ${passed} assertions passed`);

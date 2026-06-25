@@ -1875,6 +1875,7 @@
     addButton.addEventListener("click", () => {
       readSetupFormState();
       state.speakers.push(ES.createSpeaker(nextRole()));
+      ES.normalizeDefaultSpeakerRoles(state.speakers);
       sanitizeSetupState();
       renderSetup();
     });
@@ -1954,6 +1955,7 @@
       if (state.speakers.length > 1) {
         readSetupFormState();
         state.speakers.splice(index, 1);
+        ES.normalizeDefaultSpeakerRoles(state.speakers);
         sanitizeSetupState();
         renderSetup();
       }

@@ -96,6 +96,24 @@
     return `${slug}-synced.mp4`;
   }
 
+  function defaultSpeakerRoleForIndex(index) {
+    if (index <= 0) {
+      return "Host";
+    }
+    return `Guest ${index}`;
+  }
+
+  // After a creator removes or adds a source, reassign default buckets in list order so
+  // cards, chips, and summaries stay Host, Guest 1, Guest 2… with no gaps or duplicates.
+  function normalizeDefaultSpeakerRoles(speakers) {
+    const list = Array.isArray(speakers) ? speakers : [];
+    list.forEach((raw, index) => {
+      const speaker = raw && typeof raw === "object" ? raw : createSpeaker("Host");
+      speaker.role = defaultSpeakerRoleForIndex(index);
+    });
+    return list;
+  }
+
   function usedSpeakerRoles(speakers) {
     const used = new Set();
     (Array.isArray(speakers) ? speakers : []).forEach((raw) => {
@@ -107,22 +125,11 @@
     return used;
   }
 
-  // Pick the next unused bucket when a creator adds another speaker source. Prefer the
-  // Host / Guest 1… sequence creators expect in import, then Co-host, then Guest N beyond
-  // the preset list so cards never reopen an already-assigned label like Guest 2.
-  const AUTO_ASSIGN_ROLE_ORDER = ["Host", "Guest 1", "Guest 2", "Guest 3", "Guest 4", "Co-host"];
-
+  // Pick the next default bucket when a creator adds another speaker source. Roles are
+  // normalized to Host, Guest 1, Guest 2… after each add or remove so labels stay in order.
   function nextAvailableSpeakerRole(speakers) {
-    const used = usedSpeakerRoles(speakers);
-    const preset = AUTO_ASSIGN_ROLE_ORDER.find((bucket) => !used.has(bucket));
-    if (preset) {
-      return preset;
-    }
-    let guestNumber = 5;
-    while (used.has(`Guest ${guestNumber}`)) {
-      guestNumber += 1;
-    }
-    return `Guest ${guestNumber}`;
+    const list = Array.isArray(speakers) ? speakers : [];
+    return defaultSpeakerRoleForIndex(list.length);
   }
 
   function roleSelectOptions(speakers, currentRole) {
@@ -289,6 +296,8 @@
     speakerBucketCueClass,
     placeholderFileName,
     attachPlaceholderFile,
+    defaultSpeakerRoleForIndex,
+    normalizeDefaultSpeakerRoles,
     usedSpeakerRoles,
     nextAvailableSpeakerRole,
     roleSelectOptions,
