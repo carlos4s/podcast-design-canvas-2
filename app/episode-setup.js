@@ -96,6 +96,48 @@
     return `${slug}-synced.mp4`;
   }
 
+  function usedSpeakerRoles(speakers) {
+    const used = new Set();
+    (Array.isArray(speakers) ? speakers : []).forEach((raw) => {
+      const role = trim(raw && raw.role);
+      if (role) {
+        used.add(role);
+      }
+    });
+    return used;
+  }
+
+  // Pick the next unused bucket when a creator adds another speaker source. Prefer the
+  // Host / Guest 1… sequence creators expect in import, then Co-host, then Guest N beyond
+  // the preset list so cards never reopen an already-assigned label like Guest 2.
+  const AUTO_ASSIGN_ROLE_ORDER = ["Host", "Guest 1", "Guest 2", "Guest 3", "Guest 4", "Co-host"];
+
+  function nextAvailableSpeakerRole(speakers) {
+    const used = usedSpeakerRoles(speakers);
+    const preset = AUTO_ASSIGN_ROLE_ORDER.find((bucket) => !used.has(bucket));
+    if (preset) {
+      return preset;
+    }
+    let guestNumber = 5;
+    while (used.has(`Guest ${guestNumber}`)) {
+      guestNumber += 1;
+    }
+    return `Guest ${guestNumber}`;
+  }
+
+  function roleSelectOptions(speakers, currentRole) {
+    const options = SPEAKER_BUCKETS.slice();
+    const role = trim(currentRole);
+    if (role && options.indexOf(role) === -1) {
+      options.push(role);
+    }
+    const nextRole = nextAvailableSpeakerRole(speakers);
+    if (nextRole && options.indexOf(nextRole) === -1) {
+      options.push(nextRole);
+    }
+    return options;
+  }
+
   function attachPlaceholderFile(speaker) {
     const next = speaker && typeof speaker === "object" ? speaker : createSpeaker("Host");
     next.fileName = placeholderFileName(next.role);
@@ -247,6 +289,9 @@
     speakerBucketCueClass,
     placeholderFileName,
     attachPlaceholderFile,
+    usedSpeakerRoles,
+    nextAvailableSpeakerRole,
+    roleSelectOptions,
     summarize,
     validateDraft,
   };

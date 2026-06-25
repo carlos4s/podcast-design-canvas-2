@@ -585,12 +585,7 @@
   }
 
   function nextRole() {
-    const used = {};
-    state.speakers.forEach((s) => {
-      used[s.role] = true;
-    });
-    const free = ES.SPEAKER_BUCKETS.find((bucket) => !used[bucket]);
-    return free || `Guest ${state.speakers.length}`;
+    return ES.nextAvailableSpeakerRole(state.speakers);
   }
 
   function setPageIntro(mode) {
@@ -1645,6 +1640,10 @@
       if (nameInput) {
         speaker.name = nameInput.value;
       }
+      const roleSelect = document.getElementById(`f-sp-${index}-role`);
+      if (roleSelect) {
+        speaker.role = roleSelect.value;
+      }
       const trackInput = document.getElementById(`f-sp-${index}-source`);
       if (trackInput && trackInput.type === "text") {
         speaker.trackLabel = trackInput.value;
@@ -1985,7 +1984,7 @@
       id: `f-sp-${index}-role`,
       "aria-invalid": isInvalid(`speaker:${index}:role`) ? "true" : null,
     });
-    ES.SPEAKER_BUCKETS.forEach((bucket) => {
+    ES.roleSelectOptions(state.speakers, speaker.role).forEach((bucket) => {
       const option = el("option", { value: bucket, selected: speaker.role === bucket ? true : null }, bucket);
       roleSelect.appendChild(option);
     });
