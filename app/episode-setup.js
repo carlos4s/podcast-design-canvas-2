@@ -418,6 +418,62 @@
     };
   }
 
+  // Known seeded demo titles from gallery/canvas probes — must not appear in a fresh handoff.
+  function isSeededDemoEpisodeTitle(name) {
+    const lowered = trim(name).toLowerCase();
+    if (!lowered) {
+      return false;
+    }
+    if (lowered === "founders unfiltered #7" || lowered === "founders unfiltered · episode 12") {
+      return true;
+    }
+    return /episode 12/.test(lowered) && /building in public/.test(lowered);
+  }
+
+  function deriveImportShowName(summary) {
+    const episodeName = trim(summary && summary.episodeName);
+    if (episodeName) {
+      const stem = trim(episodeName.split("—")[0].split("–")[0]);
+      if (stem && stem.length > 2 && !isSeededDemoEpisodeTitle(stem)) {
+        return stem;
+      }
+    }
+    return defaultImportShowName();
+  }
+
+  function buildFreshEpisodePersistence(summary, options) {
+    const data = summary && typeof summary === "object" ? summary : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const handoff = buildImportHandoff(data);
+    return {
+      episodeName: trim(data.episodeName) || "Untitled episode",
+      showName: trim(opts.showName) || deriveImportShowName(data),
+      speakerRoles: (data.speakers || []).map((speaker) => trim(speaker.role)).filter(Boolean),
+      speakerIdentities: handoff.speakers.map((speaker) => speaker.identityLine),
+      sourceDetail: handoff.sourceDetail,
+      presetSummary: trim(opts.presetSummary) || "",
+    };
+  }
+
+  function isFreshHandoffSummary(summary, options) {
+    const data = summary && typeof summary === "object" ? summary : {};
+    const opts = options && typeof options === "object" ? options : {};
+    if (isSeededDemoEpisodeTitle(data.episodeName)) {
+      return false;
+    }
+    if (opts.expectedEpisodeName && trim(data.episodeName) !== trim(opts.expectedEpisodeName)) {
+      return false;
+    }
+    const speakers = Array.isArray(data.speakers) ? data.speakers : [];
+    if (opts.expectedSpeakerNames) {
+      const names = speakers.map((speaker) => trim(speaker.name));
+      if (names.join("|") !== opts.expectedSpeakerNames.map((name) => trim(name)).join("|")) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   const api = {
     SPEAKER_BUCKETS,
     SOURCE_MODES,
@@ -451,6 +507,10 @@
     applyImportContinueDefaults,
     buildImportHandoff,
     buildSetupCompletionHandoff,
+    isSeededDemoEpisodeTitle,
+    deriveImportShowName,
+    buildFreshEpisodePersistence,
+    isFreshHandoffSummary,
     summarize,
     validateDraft,
   };
