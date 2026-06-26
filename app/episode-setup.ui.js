@@ -1691,26 +1691,6 @@
       showErrors = true;
       return false;
     }
-    const show = LIB.createShow(check.name, {});
-    showLibrary = LIB.addShow(showLibrary, show);
-    persistShowLibrary();
-    activeShowId = show.id;
-    const start = SI ? SI.buildEpisodeStart(show, templateStore) : null;
-    if (start) {
-      applyEpisodeStart(start);
-    }
-    const episode = LIB.createEpisode(show.id, state.episodeName, {
-      templateId: start ? start.templateId : "",
-      templateName: start ? start.templateName : "",
-      presetName: start && start.appliedStyle ? start.appliedStyle.presetName : show.presetName,
-      speakerRoles: state.speakers.map((speaker) => speaker.role),
-      status: LIB.EPISODE_STATUS.DRAFT,
-    });
-    showLibrary = LIB.addEpisode(showLibrary, show.id, episode);
-    persistShowLibrary();
-    activeEpisodeId = episode.id;
-    pendingShowCreation = false;
-    persistEpisodeSession();
     return true;
   }
 
@@ -1732,19 +1712,8 @@
     const startOptions = templateId ? { templateId: templateId } : null;
     const start = SI.buildEpisodeStart(show, templateStore, startOptions);
     applyEpisodeStart(start);
-
-    const episode = LIB.createEpisode(showId, state.episodeName, {
-      templateId: start.templateId,
-      templateName: start.templateName,
-      presetName: start.appliedStyle ? start.appliedStyle.presetName : show.presetName,
-      speakerRoles: state.speakers.map((speaker) => speaker.role),
-      status: LIB.EPISODE_STATUS.DRAFT,
-    });
-    showLibrary = LIB.addEpisode(showLibrary, showId, episode);
-    persistShowLibrary();
-    activeEpisodeId = episode.id;
+    activeEpisodeId = null;
     lastView = "setup";
-    persistEpisodeSession();
 
     setPageIntro("episode-setup");
     renderFirstEpisodeImport();
@@ -2503,6 +2472,112 @@
     return card;
   }
 
+  function refreshProductionArtifactsForFreshEpisode(summary) {
+    if (AP) {
+      audioPolish = AP.createPolish(summary);
+      appliedAudioPolish = null;
+    }
+    contextApproved = false;
+    contextReview = SC ? SC.createReview(summary) : null;
+    publishReviewApproved = false;
+    publishReviewApprovedAt = null;
+    publishReview = null;
+    exportJob = null;
+    publishPackage = null;
+    correctionApproved = false;
+    correctionReview = null;
+    momentsBoard = null;
+    selectedMomentId = null;
+
+    if (activeTemplateId && TM) {
+      const template = TM.getTemplate(templateStore, activeTemplateId);
+      if (template) {
+        canvasDoc = TM.applyTemplateForEpisode(template, summary, styleSelection);
+        return;
+      }
+    }
+    if (CE && appliedStyle) {
+      canvasDoc = CE.createFromStyle(appliedStyle, summary, styleSelection);
+    } else {
+      canvasDoc = null;
+    }
+  }
+
+  function ensureFreshEpisodeRecord(summary) {
+    if (!LIB) {
+      refreshProductionArtifactsForFreshEpisode(summary);
+      return true;
+    }
+
+    refreshProductionArtifactsForFreshEpisode(summary);
+
+    if (pendingShowCreation) {
+      const showNameInput = document.getElementById("f-show-name");
+      const showName = showNameInput ? showNameInput.value : "";
+      const check = LIB.validateShowName(showLibrary, showName);
+      if (!check.ok) {
+        errors = { showName: check.error };
+        showErrors = true;
+        return false;
+      }
+      const show = LIB.createShow(check.name, {});
+      showLibrary = LIB.addShow(showLibrary, show);
+      persistShowLibrary();
+      activeShowId = show.id;
+      startingFromShowIdentity = false;
+      showIdentitySummary = null;
+      activeBrandKit = null;
+      pendingShowCreation = false;
+    } else if (!activeShowId) {
+      const showName = ES.deriveImportShowName(summary);
+      const check = LIB.validateShowName(showLibrary, showName);
+      if (!check.ok) {
+        errors = { showName: check.error };
+        showErrors = true;
+        return false;
+      }
+      const show = LIB.createShow(check.name, {});
+      showLibrary = LIB.addShow(showLibrary, show);
+      persistShowLibrary();
+      activeShowId = show.id;
+      startingFromShowIdentity = false;
+      showIdentitySummary = null;
+      activeBrandKit = null;
+    }
+
+    const presetName = appliedStyle ? appliedStyle.presetName : "";
+    const templateName = activeTemplateId && TM
+      ? (TM.getTemplate(templateStore, activeTemplateId) || {}).name
+      : "";
+
+    if (activeEpisodeId) {
+      showLibrary = LIB.updateEpisode(showLibrary, activeShowId, activeEpisodeId, {
+        name: summary.episodeName,
+        presetName: presetName,
+        templateId: activeTemplateId || "",
+        templateName: templateName,
+        speakerRoles: summary.speakers.map((speaker) => speaker.role),
+        status: LIB.EPISODE_STATUS.IN_PROGRESS,
+        updatedAt: Date.now(),
+      });
+      persistShowLibrary();
+    } else {
+      const episode = LIB.createEpisode(activeShowId, summary.episodeName, {
+        templateId: activeTemplateId || "",
+        templateName: templateName,
+        presetName: presetName,
+        speakerRoles: summary.speakers.map((speaker) => speaker.role),
+        status: LIB.EPISODE_STATUS.IN_PROGRESS,
+      });
+      showLibrary = LIB.addEpisode(showLibrary, activeShowId, episode);
+      persistShowLibrary();
+      activeEpisodeId = episode.id;
+    }
+
+    persistEpisodeSession();
+    return true;
+  }
+
   function tryCompleteSetupHandoff(options) {
     const opts = options && typeof options === "object" ? options : {};
     readSetupFormState();
@@ -2530,14 +2605,14 @@
       return false;
     }
     const summary = ES.summarize(state);
-    if (SC && !contextApproved) {
-      contextReview = SC.createReview(summary);
-    }
-    if (AP && !audioPolish) {
-      audioPolish = AP.createPolish(summary);
-    }
     if (STY && styleSelection) {
       appliedStyle = STY.summarizeStyle(styleSelection, summary.speakerCount);
+    }
+    if (!ensureFreshEpisodeRecord(summary)) {
+      if (!opts.quiet) {
+        renderSetup();
+      }
+      return false;
     }
     persistEpisodeSession();
     renderWorkspace(summary);
