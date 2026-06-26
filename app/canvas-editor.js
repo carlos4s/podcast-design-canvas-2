@@ -108,7 +108,69 @@
 
   function updateLayers(doc, layers) {
     const next = cloneDoc(doc || createFromStyle({}, {}, {}));
-    next.layers = Array.isArray(layers) ? layers.slice() : [];
+    const previous = Array.isArray(next.layers) ? next.layers : [];
+    const incoming = Array.isArray(layers) ? layers.slice() : [];
+    const CL = layersApi();
+    if (CL && !CL.preservesLockedStackPositions(previous, incoming)) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    next.layers = incoming;
+    return next;
+  }
+
+  function updateLayerBounds(doc, layerId, patch) {
+    const CL = layersApi();
+    const next = cloneDoc(doc || createFromStyle({}, {}, {}));
+    const layers = Array.isArray(next.layers) ? next.layers : [];
+    const index = CL ? CL.layerIndex(layers, layerId) : layers.findIndex((layer) => layer.id === layerId);
+    if (index < 0) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    const layer = layers[index];
+    if (!CL || !CL.canTransformLayer(layer)) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    const bounds = CL.layerBounds(layer);
+    const merged = CL.clampBounds(Object.assign({}, bounds, patch || {}));
+    const copy = layers.slice();
+    copy[index] = Object.assign({}, layer, { bounds: merged });
+    next.layers = copy;
+    return next;
+  }
+
+  function dragLayer(doc, layerId, dx, dy) {
+    const CL = layersApi();
+    const next = cloneDoc(doc || createFromStyle({}, {}, {}));
+    const layers = Array.isArray(next.layers) ? next.layers : [];
+    const index = CL ? CL.layerIndex(layers, layerId) : layers.findIndex((layer) => layer.id === layerId);
+    if (index < 0 || !CL) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    const layer = layers[index];
+    if (!CL.canTransformLayer(layer)) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    const copy = layers.slice();
+    copy[index] = CL.dragLayerBounds(copy[index], dx, dy);
+    next.layers = copy;
+    return next;
+  }
+
+  function resizeLayer(doc, layerId, dw, dh) {
+    const CL = layersApi();
+    const next = cloneDoc(doc || createFromStyle({}, {}, {}));
+    const layers = Array.isArray(next.layers) ? next.layers : [];
+    const index = CL ? CL.layerIndex(layers, layerId) : layers.findIndex((layer) => layer.id === layerId);
+    if (index < 0 || !CL) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    const layer = layers[index];
+    if (!CL.canTransformLayer(layer)) {
+      return cloneDoc(doc || createFromStyle({}, {}, {}));
+    }
+    const copy = layers.slice();
+    copy[index] = CL.resizeLayerBounds(copy[index], dw, dh);
+    next.layers = copy;
     return next;
   }
 
@@ -148,6 +210,9 @@
     refreshSpeakerFrames,
     updateElement,
     updateLayers,
+    updateLayerBounds,
+    dragLayer,
+    resizeLayer,
     summarize,
     validateForSave,
     cloneDoc,

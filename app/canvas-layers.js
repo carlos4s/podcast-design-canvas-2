@@ -2,9 +2,9 @@
 
 // Canvas layer stack + locking rules for Podcast Design Canvas.
 //
-// Locking fixes a layer's position in the stack — not just deletion. Reorder primitives
-// respect locked layers: a locked layer cannot move itself, and neighbors cannot displace
-// it. DOM-free so the screen and tests share one source of truth.
+// Locking fixes a layer's position in the stack and on-stage bounds. Reorder and drag
+// primitives respect locked layers: a locked layer cannot move itself, and neighbors
+// cannot displace it. DOM-free so the screen and tests share one source of truth.
 (function (global) {
   const LAYER_TYPES = {
     speaker: { label: "Speaker video frame", swatch: "#6c4cff", brand: false },
@@ -16,6 +16,43 @@
     brand: { label: "Logo / show branding", swatch: "#c8324a", brand: true },
     "safe-area": { label: "Safe-area guide", swatch: "#5b5d77", brand: false },
   };
+
+  const DEFAULT_BOUNDS = {
+    background: { x: 0, y: 0, w: 100, h: 100 },
+    speaker: { x: 12, y: 16, w: 76, h: 62 },
+    title: { x: 14, y: 10, w: 72, h: 18 },
+    captions: { x: 14, y: 77, w: 72, h: 14 },
+    "lower-thirds": { x: 8, y: 62, w: 42, h: 12 },
+    broll: { x: 62, y: 30, w: 30, h: 30 },
+    brand: { x: 72, y: 73, w: 22, h: 18 },
+    "safe-area": { x: 6, y: 6, w: 88, h: 88 },
+  };
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function defaultBoundsForType(type) {
+    const bounds = DEFAULT_BOUNDS[type];
+    if (!bounds) {
+      return { x: 10, y: 10, w: 40, h: 20 };
+    }
+    return Object.assign({}, bounds);
+  }
+
+  function clampBounds(bounds) {
+    const raw = bounds && typeof bounds === "object" ? bounds : {};
+    const w = clamp(Number(raw.w) || 10, 4, 100);
+    const h = clamp(Number(raw.h) || 10, 4, 100);
+    const x = clamp(Number(raw.x) || 0, 0, 100 - w);
+    const y = clamp(Number(raw.y) || 0, 0, 100 - h);
+    return { x, y, w, h };
+  }
+
+  function layerBounds(layer) {
+    const data = layer && typeof layer === "object" ? layer : {};
+    return clampBounds(data.bounds || defaultBoundsForType(data.type));
+  }
 
   function getLayerType(type) {
     return LAYER_TYPES[type] || { label: "Layer", swatch: "#5b5d77", brand: false };
@@ -30,6 +67,7 @@
       visible: opts.visible !== false,
       locked: Boolean(opts.locked),
       brand: meta.brand,
+      bounds: clampBounds(opts.bounds || defaultBoundsForType(type)),
     };
   }
 
@@ -48,6 +86,25 @@
       return -1;
     }
     return layers.findIndex((layer) => layer && layer.id === id);
+  }
+
+  function preservesLockedStackPositions(before, after) {
+    if (!Array.isArray(before) || !Array.isArray(after)) {
+      return false;
+    }
+    for (let i = 0; i < before.length; i += 1) {
+      if (!before[i] || !before[i].locked) {
+        continue;
+      }
+      if (i >= after.length || !after[i] || after[i].id !== before[i].id) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function canTransformLayer(layer) {
+    return Boolean(layer && !layer.locked);
   }
 
   function canMoveLayer(layers, index, delta) {
@@ -79,6 +136,21 @@
     return copy;
   }
 
+  function canRemoveLayer(layers, index) {
+    if (!Array.isArray(layers) || index < 0 || index >= layers.length) {
+      return false;
+    }
+    if (layers[index].locked) {
+      return false;
+    }
+    for (let i = index + 1; i < layers.length; i += 1) {
+      if (layers[i].locked) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   function toggleLock(layers, index) {
     if (!Array.isArray(layers) || index < 0 || index >= layers.length) {
       return layers.slice();
@@ -98,10 +170,7 @@
   }
 
   function removeLayer(layers, index) {
-    if (!Array.isArray(layers) || index < 0 || index >= layers.length) {
-      return layers.slice();
-    }
-    if (layers[index].locked) {
+    if (!canRemoveLayer(layers, index)) {
       return layers.slice();
     }
     const copy = layers.slice();
@@ -111,8 +180,38 @@
 
   function addLayer(layers, type, id) {
     const list = Array.isArray(layers) ? layers.slice() : [];
-    list.unshift(createLayer(type, id));
+    list.push(createLayer(type, id));
     return list;
+  }
+
+  function dragLayerBounds(layer, dx, dy) {
+    if (!canTransformLayer(layer)) {
+      return layer && typeof layer === "object" ? Object.assign({}, layer) : layer;
+    }
+    const bounds = layerBounds(layer);
+    return Object.assign({}, layer, {
+      bounds: clampBounds({
+        x: bounds.x + dx,
+        y: bounds.y + dy,
+        w: bounds.w,
+        h: bounds.h,
+      }),
+    });
+  }
+
+  function resizeLayerBounds(layer, dw, dh) {
+    if (!canTransformLayer(layer)) {
+      return layer && typeof layer === "object" ? Object.assign({}, layer) : layer;
+    }
+    const bounds = layerBounds(layer);
+    return Object.assign({}, layer, {
+      bounds: clampBounds({
+        x: bounds.x,
+        y: bounds.y,
+        w: bounds.w + dw,
+        h: bounds.h + dh,
+      }),
+    });
   }
 
   function visibleLayersForStage(layers) {
@@ -168,16 +267,25 @@
 
   const api = {
     LAYER_TYPES,
+    DEFAULT_BOUNDS,
     getLayerType,
+    defaultBoundsForType,
+    clampBounds,
+    layerBounds,
     createLayer,
     sampleLayers,
     layerIndex,
+    preservesLockedStackPositions,
+    canTransformLayer,
     canMoveLayer,
     moveLayer,
+    canRemoveLayer,
     toggleLock,
     toggleVisibility,
     removeLayer,
     addLayer,
+    dragLayerBounds,
+    resizeLayerBounds,
     visibleLayersForStage,
     evaluateLayout,
   };

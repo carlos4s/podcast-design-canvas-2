@@ -195,13 +195,23 @@
     return stages;
   }
 
+  function pickCurrentStage(stages) {
+    const list = Array.isArray(stages) ? stages : [];
+    // Surface canvas editor before audio polish when a show template is the recommended next step (#190).
+    const templateAttention = list.find((item) => item.id === "template" && item.status === STATUS.ATTENTION);
+    if (templateAttention) {
+      return templateAttention;
+    }
+    return list.find((item) => item.status === STATUS.ACTIVE)
+      || list.find((item) => item.status === STATUS.ATTENTION)
+      || list[list.length - 1];
+  }
+
   function buildWorkspace(episodeSummary, ctx) {
     const stages = buildStages(episodeSummary, ctx);
     const completeCount = stages.filter((item) => item.status === STATUS.COMPLETE).length;
     const attentionCount = stages.filter((item) => item.status === STATUS.ATTENTION).length;
-    const activeStage = stages.find((item) => item.status === STATUS.ACTIVE)
-      || stages.find((item) => item.status === STATUS.ATTENTION)
-      || stages[stages.length - 1];
+    const activeStage = pickCurrentStage(stages);
 
     return {
       episodeName: (episodeSummary && episodeSummary.episodeName) || "",

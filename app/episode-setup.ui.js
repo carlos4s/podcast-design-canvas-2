@@ -4145,13 +4145,138 @@
     return CL.getLayerType(type).label;
   }
 
-  function renderCanvasStage(doc) {
+  function applyCanvasLayerBounds(node, layer) {
+    const bounds = CL.layerBounds(layer);
+    node.style.removeProperty("inset");
+    node.style.left = `${bounds.x}%`;
+    node.style.top = `${bounds.y}%`;
+    node.style.width = `${bounds.w}%`;
+    node.style.height = `${bounds.h}%`;
+    node.style.right = "auto";
+    node.style.bottom = "auto";
+  }
+
+  function bindCanvasLayerTransform(node, layer, summary, mode) {
+    if (!node || !layer || layer.locked) {
+      return;
+    }
+    node.classList.add("canvas-obj-editable");
+    const stage = node.closest(".canvas-stage");
+    if (!stage) {
+      return;
+    }
+
+    function stageDelta(clientX, clientY, startX, startY) {
+      const rect = stage.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        return { dx: 0, dy: 0 };
+      }
+      return {
+        dx: ((clientX - startX) / rect.width) * 100,
+        dy: ((clientY - startY) / rect.height) * 100,
+      };
+    }
+
+    if (mode === "drag") {
+      node.style.cursor = "grab";
+      node.addEventListener("pointerdown", (event) => {
+        if (layer.locked) {
+          return;
+        }
+        event.preventDefault();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const origin = CL.layerBounds(layer);
+        node.setPointerCapture(event.pointerId);
+        node.style.cursor = "grabbing";
+
+        function onMove(moveEvent) {
+          const delta = stageDelta(moveEvent.clientX, moveEvent.clientY, startX, startY);
+          const preview = CL.clampBounds({
+            x: origin.x + delta.dx,
+            y: origin.y + delta.dy,
+            w: origin.w,
+            h: origin.h,
+          });
+          applyCanvasLayerBounds(node, Object.assign({}, layer, { bounds: preview }));
+        }
+
+        function onUp(upEvent) {
+          node.releasePointerCapture(upEvent.pointerId);
+          node.removeEventListener("pointermove", onMove);
+          node.removeEventListener("pointerup", onUp);
+          node.removeEventListener("pointercancel", onUp);
+          node.style.cursor = "grab";
+          const delta = stageDelta(upEvent.clientX, upEvent.clientY, startX, startY);
+          if (Math.abs(delta.dx) > 0.01 || Math.abs(delta.dy) > 0.01) {
+            canvasDoc = CE.dragLayer(canvasDoc, layer.id, delta.dx, delta.dy);
+            renderCanvasEditor(summary);
+          }
+        }
+
+        node.addEventListener("pointermove", onMove);
+        node.addEventListener("pointerup", onUp);
+        node.addEventListener("pointercancel", onUp);
+      });
+      return;
+    }
+
+    node.classList.add("canvas-obj-resize-handle");
+    node.setAttribute("aria-label", `Resize ${CL.getLayerType(layer.type).label}`);
+    node.addEventListener("pointerdown", (event) => {
+      if (layer.locked) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const origin = CL.layerBounds(layer);
+      node.setPointerCapture(event.pointerId);
+
+      function onMove(moveEvent) {
+        const delta = stageDelta(moveEvent.clientX, moveEvent.clientY, startX, startY);
+        const preview = CL.clampBounds({
+          x: origin.x,
+          y: origin.y,
+          w: origin.w + delta.dx,
+          h: origin.h + delta.dy,
+        });
+        const target = node.parentElement;
+        if (target) {
+          applyCanvasLayerBounds(target, Object.assign({}, layer, { bounds: preview }));
+        }
+      }
+
+      function onUp(upEvent) {
+        node.releasePointerCapture(upEvent.pointerId);
+        node.removeEventListener("pointermove", onMove);
+        node.removeEventListener("pointerup", onUp);
+        node.removeEventListener("pointercancel", onUp);
+        const delta = stageDelta(upEvent.clientX, upEvent.clientY, startX, startY);
+        if (Math.abs(delta.dx) > 0.01 || Math.abs(delta.dy) > 0.01) {
+          canvasDoc = CE.resizeLayer(canvasDoc, layer.id, delta.dx, delta.dy);
+          renderCanvasEditor(summary);
+        }
+      }
+
+      node.addEventListener("pointermove", onMove);
+      node.addEventListener("pointerup", onUp);
+      node.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  function renderCanvasStage(doc, summary) {
     const stage = el("div", { class: "canvas-stage", "aria-hidden": "true" });
     stage.style.background = doc.background || "#10131f";
 
     CL.visibleLayersForStage(doc.layers).forEach((layer) => {
       if (layer.type === "speaker") {
-        const frameWrap = el("div", { class: `canvas-speaker-frames stage-${doc.layoutId || "grid"}` });
+        const frameWrap = el("div", {
+          class: `canvas-speaker-frames stage-${doc.layoutId || "grid"} canvas-obj${layer.locked ? " is-locked" : ""}`,
+          "data-layer-id": layer.id,
+        });
+        applyCanvasLayerBounds(frameWrap, layer);
         (doc.speakerFrames || []).forEach((frame) => {
           const frameEl = el(
             "div",
@@ -4162,21 +4287,73 @@
           frameEl.style.borderColor = doc.accent;
           frameWrap.appendChild(frameEl);
         });
+        if (!layer.locked) {
+          frameWrap.appendChild(el("span", { class: "canvas-obj-resize-handle", "aria-hidden": "true" }));
+        }
         stage.appendChild(frameWrap);
+        bindCanvasLayerTransform(frameWrap, layer, summary, "drag");
+        if (!layer.locked) {
+          bindCanvasLayerTransform(frameWrap.querySelector(".canvas-obj-resize-handle"), layer, summary, "resize");
+        }
         return;
       }
       if (layer.type === "title") {
-        stage.appendChild(el("div", { class: "canvas-obj canvas-obj-title canvas-title-live" }, doc.titleText));
+        const titleNode = el(
+          "div",
+          {
+            class: `canvas-obj canvas-obj-title canvas-title-live${layer.locked ? " is-locked" : ""}`,
+            "data-layer-id": layer.id,
+          },
+          doc.titleText,
+        );
+        applyCanvasLayerBounds(titleNode, layer);
+        if (!layer.locked) {
+          titleNode.appendChild(el("span", { class: "canvas-obj-resize-handle", "aria-hidden": "true" }));
+        }
+        stage.appendChild(titleNode);
+        bindCanvasLayerTransform(titleNode, layer, summary, "drag");
+        if (!layer.locked) {
+          bindCanvasLayerTransform(titleNode.querySelector(".canvas-obj-resize-handle"), layer, summary, "resize");
+        }
         return;
       }
       if (layer.type === "captions") {
-        stage.appendChild(
-          el("div", { class: "canvas-obj canvas-obj-captions canvas-caption-live" }, doc.captionText),
+        const captionNode = el(
+          "div",
+          {
+            class: `canvas-obj canvas-obj-captions canvas-caption-live${layer.locked ? " is-locked" : ""}`,
+            "data-layer-id": layer.id,
+          },
+          doc.captionText,
         );
+        applyCanvasLayerBounds(captionNode, layer);
+        if (!layer.locked) {
+          captionNode.appendChild(el("span", { class: "canvas-obj-resize-handle", "aria-hidden": "true" }));
+        }
+        stage.appendChild(captionNode);
+        bindCanvasLayerTransform(captionNode, layer, summary, "drag");
+        if (!layer.locked) {
+          bindCanvasLayerTransform(captionNode.querySelector(".canvas-obj-resize-handle"), layer, summary, "resize");
+        }
         return;
       }
-      const obj = el("div", { class: `canvas-obj canvas-obj-${layer.type}` }, shortLayerLabel(layer.type));
+      const obj = el(
+        "div",
+        {
+          class: `canvas-obj canvas-obj-${layer.type}${layer.locked ? " is-locked" : ""}`,
+          "data-layer-id": layer.id,
+        },
+        shortLayerLabel(layer.type),
+      );
+      applyCanvasLayerBounds(obj, layer);
+      if (!layer.locked) {
+        obj.appendChild(el("span", { class: "canvas-obj-resize-handle", "aria-hidden": "true" }));
+      }
       stage.appendChild(obj);
+      bindCanvasLayerTransform(obj, layer, summary, "drag");
+      if (!layer.locked) {
+        bindCanvasLayerTransform(obj.querySelector(".canvas-obj-resize-handle"), layer, summary, "resize");
+      }
     });
     return stage;
   }
@@ -4237,7 +4414,7 @@
       type: "button",
       class: "ghost canvas-tiny",
       "aria-label": `Remove ${meta.label}`,
-      disabled: layer.locked ? true : null,
+      disabled: CL.canRemoveLayer(canvasDoc.layers, index) ? null : true,
     }, "Remove");
     remove.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4334,7 +4511,7 @@
     grid.appendChild(controls);
 
     const previewCard = el("section", { class: "card" }, el("h3", {}, "Live preview"));
-    previewCard.appendChild(renderCanvasStage(canvasDoc));
+    previewCard.appendChild(renderCanvasStage(canvasDoc, summary));
     previewCard.appendChild(
       el("p", { class: `canvas-status canvas-status-${evaluation.overall}` },
         evaluation.overall === "ready" ? "Layout ready to save" : "Review layout warnings before saving",
