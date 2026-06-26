@@ -87,6 +87,26 @@
     return g.PdcPublishReview;
   }
 
+  function mediaApi() {
+    if (typeof module !== "undefined" && module.exports && typeof require === "function") {
+      return require("./episode-media.js");
+    }
+    const g = typeof window !== "undefined" ? window : globalThis;
+    return g.PdcEpisodeMedia;
+  }
+
+  function polishedAudioReady(audioPolish) {
+    const audio = audioPolish || {};
+    if (!audio.presetName || !audio.complete) {
+      return false;
+    }
+    const media = mediaApi();
+    if (!media) {
+      return false;
+    }
+    return media.verifyPolishedTracks(audio.tracks || []).ok;
+  }
+
   function validatePublishReviewGate(context) {
     const ctx = context || {};
     const PR = publishReviewApi();
@@ -118,7 +138,7 @@
   function validateReadiness(context) {
     const ctx = context || {};
     const missing = [];
-    if (!ctx.audioPolish || !ctx.audioPolish.presetName) {
+    if (!polishedAudioReady(ctx.audioPolish)) {
       missing.push("audio");
     }
     if (!ctx.appliedStyle || !ctx.appliedStyle.presetName) {
@@ -155,7 +175,12 @@
     lines.push(`${episode.speakerCount || 0} speaker${episode.speakerCount === 1 ? "" : "s"} · ${episode.sourceModeLabel || "sources"}`);
 
     if (ctx.audioPolish && ctx.audioPolish.presetName) {
-      lines.push(`Audio: ${ctx.audioPolish.presetName} (${ctx.audioPolish.treatmentLine || "treatment applied"})`);
+      const audioDetail = polishedAudioReady(ctx.audioPolish) && ctx.audioPolish.exportAudioLine
+        ? `${ctx.audioPolish.presetName} (${ctx.audioPolish.treatmentLine || "treatment applied"}) · ${ctx.audioPolish.exportAudioLine}`
+        : polishedAudioReady(ctx.audioPolish) && ctx.audioPolish.polishedTrackLine
+          ? `${ctx.audioPolish.presetName} (${ctx.audioPolish.treatmentLine || "treatment applied"}) · ${ctx.audioPolish.polishedTrackLine}`
+          : `${ctx.audioPolish.presetName} (${ctx.audioPolish.treatmentLine || "treatment applied"})`;
+      lines.push(`Audio: ${audioDetail}`);
     }
     if (ctx.appliedStyle && ctx.appliedStyle.presetName) {
       lines.push(
@@ -216,13 +241,20 @@
     return { ok: true, state: next };
   }
 
-  function completeExport(state, episodeSummary) {
+  function completeExport(state, episodeSummary, context) {
     const next = clone(state || createExport(episodeSummary));
     const episode = episodeSummary || {};
+    const ctx = context || {};
+    const media = mediaApi();
+    const manifest = media && ctx.audioPolish
+      ? media.buildExportAudioManifest(ctx.audioPolish)
+      : { tracks: [], usePolished: false, summaryLine: "" };
     next.status = "ready";
     next.progress = 100;
     next.completedAt = Date.now();
     next.downloadName = `${safeFileStem(episode.episodeName)}-${next.resolution}.mp4`;
+    next.audioManifest = manifest;
+    next.usesPolishedAudio = Boolean(manifest.usePolished);
     return next;
   }
 
@@ -231,7 +263,7 @@
     if (!started.ok) {
       return started;
     }
-    return { ok: true, state: completeExport(started.state, episodeSummary) };
+    return { ok: true, state: completeExport(started.state, episodeSummary, context) };
   }
 
   function summarizeExport(state) {
@@ -249,6 +281,10 @@
       downloadName: job.downloadName || "",
       ready: job.status === "ready",
       rendering: job.status === "rendering",
+      usesPolishedAudio: Boolean(job.usesPolishedAudio),
+      audioTrackCount: job.audioManifest && Array.isArray(job.audioManifest.tracks)
+        ? job.audioManifest.tracks.length
+        : 0,
     };
   }
 

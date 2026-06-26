@@ -1983,6 +1983,51 @@ button.ghost:hover,
   padding: 4px 10px;
 }
 
+/* ---- Audio polish asset processing (#197) ---- */
+.audio-track-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.audio-track-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.audio-track-status-complete {
+  color: #16794c;
+}
+
+.audio-track-status-failed {
+  color: #b42318;
+}
+
+.audio-track-status-processing {
+  color: #b54708;
+}
+
+.audio-track-status-pending {
+  color: var(--ink-soft);
+}
+
+.audio-track-asset {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.audio-track-error {
+  margin: 6px 0 0;
+  color: #b42318;
+}
+
+.audio-polish-result {
+  margin-bottom: 16px;
+}
+
 .audio-summary-preset {
   font-weight: 700;
   font-size: 16px;

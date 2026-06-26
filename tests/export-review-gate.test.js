@@ -7,6 +7,7 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const contextApi = require("../app/social-context.js");
 const review = require("../app/publish-review.js");
@@ -31,6 +32,13 @@ function completeDraft() {
   return draft;
 }
 
+function processedAudio(episode) {
+  media.resetStore();
+  const result = audio.runPolish(audio.createPolish(episode), episode, media, { episodeKey: "show-demo:ep-demo" });
+  assert.strictEqual(result.ok, true);
+  return audio.summarizePolish(result.polish, media);
+}
+
 function exportContext(episode, options) {
   const opts = options || {};
   const selection = style.createSelection();
@@ -38,9 +46,11 @@ function exportContext(episode, options) {
   board = moments.addMoment(board, "caption", { time: "1:00", text: "Welcome back", speakerRole: "Host" });
   let contextReview = contextApi.createReview(episode);
   contextReview = contextApi.approveReview(contextReview);
+  const audioSummary = processedAudio(episode);
+  const styleSummary = style.summarizeStyle(selection, episode.speakerCount);
   let publishReview = review.createReview(episode, {
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
-    appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
+    audioPolish: audioSummary,
+    appliedStyle: styleSummary,
     templateName: "Founders Look",
     hasCanvas: true,
     contextApproved: true,
@@ -53,8 +63,8 @@ function exportContext(episode, options) {
     publishReview = review.approveReview(publishReview).review;
   }
   return {
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
-    appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
+    audioPolish: audioSummary,
+    appliedStyle: styleSummary,
     templateName: "Founders Look",
     momentsSummary: moments.summarizeBoard(board),
     contextSummary: contextApi.summarizeReview(contextReview),

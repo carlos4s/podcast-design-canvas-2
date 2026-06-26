@@ -8,6 +8,7 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const contextApi = require("../app/social-context.js");
 const review = require("../app/publish-review.js");
@@ -36,6 +37,13 @@ function completeDraft() {
   return draft;
 }
 
+function processedAudio(episode) {
+  media.resetStore();
+  const result = audio.runPolish(audio.createPolish(episode), episode, media, { episodeKey: "show-demo:ep-demo" });
+  assert.strictEqual(result.ok, true);
+  return audio.summarizePolish(result.polish, media);
+}
+
 function fullContext(episode, options) {
   const opts = options || {};
   const selection = style.createSelection();
@@ -44,7 +52,7 @@ function fullContext(episode, options) {
   let contextReview = contextApi.createReview(episode);
   contextReview = contextApi.approveReview(contextReview);
   return {
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
+    audioPolish: processedAudio(episode),
     appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
     templateName: opts.templateName || "Founders Unfiltered",
     hasCanvas: opts.hasCanvas !== false,

@@ -8,6 +8,7 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const exportApi = require("../app/episode-export.js");
 
@@ -30,10 +31,17 @@ function completeUploadDraft() {
   return draft;
 }
 
+function processedAudio(episode) {
+  media.resetStore();
+  const result = audio.runPolish(audio.createPolish(episode), episode, media, { episodeKey: "show-demo:ep-demo" });
+  assert.strictEqual(result.ok, true);
+  return audio.summarizePolish(result.polish, media);
+}
+
 function completeContext(episode) {
   const selection = style.createSelection();
   const appliedStyle = style.summarizeStyle(selection, episode.speakerCount);
-  const polish = audio.summarizePolish(audio.createPolish(episode));
+  const polish = processedAudio(episode);
   const board = moments.createBoard(episode);
   const withMoment = moments.addMoment(board, "caption", { time: "1:00", text: "Welcome back", speakerRole: "Host" });
   const momentsSummary = moments.summarizeBoard(withMoment);

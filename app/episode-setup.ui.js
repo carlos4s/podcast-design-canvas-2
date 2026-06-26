@@ -14,6 +14,7 @@
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
   const AP = window.PdcAudioPolish;
+  const EM = window.PdcEpisodeMedia;
   const CL = window.PdcCanvasLayers;
   const CE = window.PdcCanvasEditor;
   const TM = window.PdcShowTemplates;
@@ -75,6 +76,7 @@
   let publishReviewApprovedAt = null;
   const LIB_STORAGE_KEY = "pdc-show-library";
   const EPISODE_SESSIONS_KEY = "pdc-episode-sessions";
+  const MEDIA_STORAGE_KEY = "pdc-episode-media";
   let showLibrary = { shows: [] };
   let activeShowId = null;
   let activeEpisodeId = null;
@@ -297,6 +299,48 @@
     }
   }
 
+  function safeLoadEpisodeMedia() {
+    try {
+      return typeof localStorage !== "undefined" ? localStorage.getItem(MEDIA_STORAGE_KEY) : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistEpisodeMediaStore() {
+    if (!EM || typeof localStorage === "undefined") {
+      return;
+    }
+    try {
+      localStorage.setItem(MEDIA_STORAGE_KEY, EM.serializeStore());
+    } catch (err) {
+      /* ignore quota errors */
+    }
+  }
+
+  function hydrateEpisodeMediaStore() {
+    if (!EM) {
+      return;
+    }
+    EM.deserializeStore(safeLoadEpisodeMedia());
+  }
+
+  function currentEpisodeMediaKey() {
+    return episodeSessionKey(activeShowId, activeEpisodeId);
+  }
+
+  function registerImportedSources(summary) {
+    if (!EM || !AP || !summary) {
+      return;
+    }
+    const episodeKey = currentEpisodeMediaKey();
+    if (!episodeKey || episodeKey === "show:episode") {
+      return;
+    }
+    AP.registerEpisodeSources(summary, episodeKey, EM);
+    persistEpisodeMediaStore();
+  }
+
   function episodeSessionKey(showId, episodeId) {
     return `${showId || "show"}:${episodeId || "episode"}`;
   }
@@ -308,6 +352,7 @@
       setupDraft: state,
       styleSelection: styleSelection,
       appliedStyle: appliedStyle,
+      audioPolish: audioPolish,
       appliedAudioPolish: appliedAudioPolish,
       contextApproved: contextApproved,
       publishReviewApproved: publishReviewApproved,
@@ -327,6 +372,7 @@
     const sessions = loadEpisodeSessions();
     sessions[episodeSessionKey(activeShowId, activeEpisodeId)] = buildEpisodeSessionSnapshot();
     saveEpisodeSessions(sessions);
+    persistEpisodeMediaStore();
     if (LIB) {
       const status = buildEpisodeSessionSnapshot().workspaceReached
         ? LIB.EPISODE_STATUS.IN_PROGRESS
@@ -345,6 +391,7 @@
     styleSelection = data.styleSelection || (STY ? STY.createSelection() : null);
     appliedStyle = data.appliedStyle || null;
     appliedAudioPolish = data.appliedAudioPolish || null;
+    audioPolish = data.audioPolish || (appliedAudioPolish && AP ? AP.createPolish(ES.summarize(state)) : null);
     contextApproved = Boolean(data.contextApproved);
     publishReviewApproved = Boolean(data.publishReviewApproved);
     publishReviewApprovedAt = data.publishReviewApprovedAt || null;
@@ -2575,6 +2622,7 @@
     }
 
     persistEpisodeSession();
+    registerImportedSources(summary);
     return true;
   }
 
@@ -4807,13 +4855,27 @@
     );
     const trackList = el("div", { class: "audio-track-list" });
     audioPolish.speakers.forEach((track) => {
+      const statusClass = track.status === AP.TRACK_STATUS.COMPLETE
+        ? "audio-track-status-complete"
+        : track.status === AP.TRACK_STATUS.FAILED
+          ? "audio-track-status-failed"
+          : track.status === AP.TRACK_STATUS.PROCESSING
+            ? "audio-track-status-processing"
+            : "audio-track-status-pending";
       trackList.appendChild(
         el("div", { class: "audio-track" },
           el("div", { class: "audio-track-main" },
             el("span", { class: "role-pill" }, track.role),
             el("span", { class: "summary-name" }, track.name),
+            el("span", { class: `audio-track-status ${statusClass}` }, AP.trackStatusLabel(track.status)),
           ),
           el("p", { class: "summary-source" }, track.sourceLabel),
+          track.polishedAssetId
+            ? el("p", { class: "hint audio-track-asset" }, `${track.polishedAssetId} · ${track.polishedSizeBytes || 0} bytes`)
+            : null,
+          track.error
+            ? el("p", { class: "hint audio-track-error", role: "alert" }, track.error)
+            : null,
           el("span", { class: "audio-track-badge" }, AP.speakerIndicator(audioPolish, track)),
         ),
       );
@@ -4822,9 +4884,33 @@
     grid.appendChild(tracksCard);
     view.appendChild(grid);
 
+    if (audioPolish.status === "complete" && appliedAudioPolish && appliedAudioPolish.complete) {
+      view.appendChild(
+        el(
+          "div",
+          { class: "banner audio-polish-result", role: "status" },
+          el("strong", {}, "Polished audio saved"),
+          el("p", { class: "hint" }, appliedAudioPolish.exportAudioLine || appliedAudioPolish.polishedTrackLine || "All speaker tracks processed."),
+        ),
+      );
+    }
+
     const applyButton = el("button", { type: "button", class: "primary" }, "Apply audio & continue →");
     applyButton.addEventListener("click", () => {
-      appliedAudioPolish = AP.summarizePolish(audioPolish);
+      applyButton.disabled = true;
+      applyButton.textContent = "Processing audio…";
+      registerImportedSources(summary);
+      const episodeKey = currentEpisodeMediaKey();
+      const result = AP.runPolish(audioPolish, summary, EM, { episodeKey });
+      audioPolish = result.polish;
+      if (!result.ok) {
+        applyButton.disabled = false;
+        applyButton.textContent = "Apply audio & continue →";
+        renderAudioPolish(summary);
+        return;
+      }
+      appliedAudioPolish = AP.summarizePolish(audioPolish, EM);
+      persistEpisodeSession();
       if (STY && !appliedStyle) {
         renderStyle(summary);
       } else {
@@ -5399,6 +5485,7 @@
   }
 
   // Initialize show library from localStorage, then show the library dashboard first.
+  hydrateEpisodeMediaStore();
   if (LIB) {
     showLibrary = LIB.deserializeLibrary(safeLoadShowLibrary());
   }

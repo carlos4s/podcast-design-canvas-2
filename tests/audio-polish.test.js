@@ -7,6 +7,7 @@
 const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 
 let passed = 0;
 function test(name, fn) {
@@ -76,7 +77,14 @@ test("summarizePolish reflects the chosen treatment", () => {
 
 test("buildReviewSummary includes audio in the export path", () => {
   const episode = setup.summarize(completeUploadDraft());
-  const polish = audio.summarizePolish(audio.createPolish(episode));
+  media.resetStore();
+  const polishState = audio.runPolish(
+    audio.applyPreset(audio.createPolish(episode), "clean"),
+    episode,
+    media,
+    { episodeKey: "show-demo:ep-demo" },
+  ).polish;
+  const polish = audio.summarizePolish(polishState, media);
   const review = audio.buildReviewSummary(episode, polish, {
     styleName: "Studio Spotlight",
     templateName: "Founders Unfiltered",
@@ -98,7 +106,9 @@ test("ACCEPTANCE: episode setup flows into audio polish and saves a review summa
 
   polish = audio.applyPreset(polish, "clean");
   polish = audio.updateControl(polish, "speechClarity", "strong");
-  const applied = audio.summarizePolish(polish);
+  media.resetStore();
+  polish = audio.runPolish(polish, episode, media, { episodeKey: "show-demo:ep-demo" }).polish;
+  const applied = audio.summarizePolish(polish, media);
   assert.strictEqual(applied.presetName, "Clean");
   assert.strictEqual(applied.speechClarityLabel, "Strong");
 
