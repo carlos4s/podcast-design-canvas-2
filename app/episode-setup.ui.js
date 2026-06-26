@@ -9,7 +9,7 @@
 // and creator template gallery (#106), home screen focus (#112),
 // gallery copy polish (#117), first-episode import (#130), import handoff (#142),
 // and preset-first import setup (#147), setup completion handoff (#149),
-// and episode summary handoff polish (#153).
+// and episode summary handoff polish (#153), and import form readability (#155).
 (function () {
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
@@ -404,8 +404,8 @@
     return el(
       "div",
       { class: "field" },
-      el("label", { for: control.id }, labelText),
-      hint ? el("p", { class: "hint" }, hint) : null,
+      el("label", { class: "field-label", for: control.id }, labelText),
+      hint ? el("p", { class: "hint field-hint" }, hint) : null,
       control,
       key ? errorFor(key) : null,
     );
@@ -419,7 +419,7 @@
       el(
         "div",
         { class: "setup-section-title-block" },
-        el("h2", {}, title),
+        el("h3", { class: "setup-section-title" }, title),
         lead ? el("p", { class: "hint setup-section-lead" }, lead) : null,
       ),
     );
@@ -1927,7 +1927,7 @@
       ? `Import your first episode${show ? ` for ${show.name}` : ""}`
       : "Set up your recording and speakers";
     const importLead = firstImport
-      ? "Paste a Riverside link or attach synced speaker files, pick an episode look, then name your speakers."
+      ? "Add your Riverside link or synced speaker files, choose an episode look, then assign speaker buckets."
       : "Import your synced sources, choose a preset look, and assign each speaker bucket.";
 
     const form = el("form", {

@@ -3739,3 +3739,149 @@ button.ghost:hover,
   }
 }
 
+/* ---- Import form readability (#155) ---- */
+.setup-import {
+  gap: 20px;
+}
+
+.setup-import .card {
+  margin-bottom: 0;
+  padding: 22px 24px;
+}
+
+.setup-first-episode-import .setup-import-head h2 {
+  max-width: none;
+  line-height: 1.2;
+}
+
+.setup-import-head {
+  margin-bottom: 0;
+}
+
+.setup-import-head .hint {
+  font-size: 15px;
+  line-height: 1.55;
+  max-width: 48ch;
+}
+
+.setup-import-flow {
+  margin-bottom: 4px;
+  padding: 14px 18px;
+  gap: 12px 22px;
+  line-height: 1.45;
+}
+
+.setup-flow-step {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.setup-section-head {
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line, #d8def0);
+}
+
+.setup-section-title-block .setup-section-title,
+.setup-section-title-block h2 {
+  margin: 0 0 6px;
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+.setup-section-lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 52ch;
+}
+
+.setup-import .field {
+  margin-bottom: 20px;
+}
+
+.setup-import .field-label {
+  font-size: 15px;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.setup-import .field-hint {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 10px;
+  max-width: 52ch;
+}
+
+.setup-import input[type="text"],
+.setup-import input[type="url"],
+.setup-import select {
+  font-size: 15px;
+  line-height: 1.4;
+  min-height: 46px;
+}
+
+.setup-speakers-card .speaker-stack {
+  gap: 28px;
+}
+
+.speaker-card {
+  padding: 22px 24px;
+}
+
+.speaker-optional-details {
+  margin-top: 18px;
+  padding: 14px 16px;
+}
+
+.speaker-optional-details summary {
+  line-height: 1.45;
+}
+
+.speaker-social-label {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.speaker-social-benefit {
+  line-height: 1.55;
+  max-width: 52ch;
+}
+
+.setup-import-ready-banner {
+  margin-top: 4px;
+  line-height: 1.55;
+}
+
+@media (max-width: 720px) {
+  .setup-import .card {
+    padding: 18px 16px;
+  }
+
+  .setup-import-head h2 {
+    font-size: 1.5rem;
+    line-height: 1.25;
+  }
+
+  .setup-import input[type="text"],
+  .setup-import input[type="url"],
+  .setup-import select {
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  .setup-section-head {
+    gap: 12px;
+  }
+
+  .setup-import .field-hint,
+  .setup-import-head .hint,
+  .setup-section-lead {
+    max-width: none;
+  }
+
+  .speaker-card {
+    padding: 18px 16px;
+  }
+}
+
