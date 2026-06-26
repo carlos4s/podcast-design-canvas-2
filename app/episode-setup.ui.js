@@ -4664,7 +4664,14 @@
       });
       video.appendChild(el("span", { class: "episode-look-initials" }, frame.initials));
       frameEl.appendChild(video);
-      frameEl.appendChild(el("div", { class: "episode-look-nameplate" }, frame.name));
+      const nameplate = el("div", { class: "episode-look-nameplate" });
+      if (previewSize === "hero") {
+        nameplate.appendChild(el("span", { class: "episode-look-role" }, frame.role));
+        nameplate.appendChild(el("span", { class: "episode-look-speaker" }, frame.name));
+      } else {
+        nameplate.appendChild(el("span", { class: "episode-look-speaker" }, frame.name));
+      }
+      frameEl.appendChild(nameplate);
       framesWrap.appendChild(frameEl);
     });
     stage.appendChild(framesWrap);
@@ -4796,7 +4803,7 @@
         { class: "workspace-head" },
         el("p", { class: "eyebrow" }, "Choose a style"),
         el("h2", {}, `Pick a look for ${summary.episodeName}`),
-        el("p", { class: "hint" }, "Pick a preset card with a full episode preview — layout, captions, and overlay update live on the right."),
+        el("p", { class: "hint" }, "Pick a preset card, then inspect the larger live preview — layout, speaker names, and captions update as you switch."),
       ),
     );
 
@@ -4870,12 +4877,20 @@
 
     layoutGrid.appendChild(controls);
 
+    const previewHost = el("div", { class: "style-picker-live-preview" });
+    previewHost.appendChild(renderPreview(summary, styleSelection, false));
+
     // Preview column
     const previewCard = el(
       "section",
-      { class: "card preview-card" },
-      el("h3", {}, "Preview"),
-      renderPreview(summary, styleSelection, false),
+      { class: "card preview-card style-picker-preview-card" },
+      el("h3", {}, "Live episode preview"),
+      el(
+        "p",
+        { class: "hint style-picker-preview-lead" },
+        "Speaker roles, caption treatment, and layout structure should be easy to read before you apply a preset.",
+      ),
+      previewHost,
     );
     layoutGrid.appendChild(previewCard);
 
