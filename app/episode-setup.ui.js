@@ -14,6 +14,7 @@
   const ES = window.PdcEpisodeSetup;
   const STY = window.PdcEpisodeStyle;
   const AP = window.PdcAudioPolish;
+  const EM = window.PdcEpisodeMedia;
   const CL = window.PdcCanvasLayers;
   const CE = window.PdcCanvasEditor;
   const TM = window.PdcShowTemplates;
@@ -75,6 +76,10 @@
   let publishReviewApprovedAt = null;
   const LIB_STORAGE_KEY = "pdc-show-library";
   const EPISODE_SESSIONS_KEY = "pdc-episode-sessions";
+  const MEDIA_STORAGE_KEY = "pdc-episode-media";
+  // Real uploaded speaker-file bytes, keyed by source asset id, captured during setup so the
+  // polish step can derive the polished asset from the actual imported media (#197).
+  const uploadedMediaBytes = {};
   let showLibrary = { shows: [] };
   let activeShowId = null;
   let activeEpisodeId = null;
@@ -301,6 +306,66 @@
     return `${showId || "show"}:${episodeId || "episode"}`;
   }
 
+  function safeLoadEpisodeMedia() {
+    try {
+      return typeof localStorage !== "undefined" ? localStorage.getItem(MEDIA_STORAGE_KEY) : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistEpisodeMediaStore() {
+    if (!EM || typeof localStorage === "undefined") {
+      return;
+    }
+    try {
+      localStorage.setItem(MEDIA_STORAGE_KEY, EM.serializeStore());
+    } catch (err) {
+      /* ignore quota errors */
+    }
+  }
+
+  function hydrateEpisodeMediaStore() {
+    if (!EM) {
+      return;
+    }
+    EM.deserializeStore(safeLoadEpisodeMedia());
+  }
+
+  function currentEpisodeMediaKey() {
+    return episodeSessionKey(activeShowId, activeEpisodeId);
+  }
+
+  // Map of source-asset-id -> real uploaded bytes for the current episode, so processing can
+  // transform the actual imported media when the creator provided a file.
+  function currentSourceBytesById(summary) {
+    if (!AP || !summary) {
+      return {};
+    }
+    const speakers = Array.isArray(summary.speakers) ? summary.speakers : [];
+    const map = {};
+    speakers.forEach((speaker, index) => {
+      const sourceId = AP.buildSourceAssetId(summary, speaker, index);
+      const bytes = speaker && uploadedMediaBytes[speaker.sourceLabel];
+      if (sourceId && bytes) {
+        map[sourceId] = bytes;
+      }
+    });
+    return map;
+  }
+
+  function registerImportedSources(summary) {
+    if (!EM || !AP || !summary) {
+      return;
+    }
+    const episodeKey = currentEpisodeMediaKey();
+    if (!episodeKey || episodeKey === "show:episode") {
+      return;
+    }
+    AP.registerEpisodeSources(summary, episodeKey, EM, currentSourceBytesById(summary));
+    persistEpisodeMediaStore();
+  }
+
   function buildEpisodeSessionSnapshot() {
     return {
       showId: activeShowId,
@@ -308,6 +373,7 @@
       setupDraft: state,
       styleSelection: styleSelection,
       appliedStyle: appliedStyle,
+      audioPolish: audioPolish,
       appliedAudioPolish: appliedAudioPolish,
       contextApproved: contextApproved,
       publishReviewApproved: publishReviewApproved,
@@ -327,6 +393,7 @@
     const sessions = loadEpisodeSessions();
     sessions[episodeSessionKey(activeShowId, activeEpisodeId)] = buildEpisodeSessionSnapshot();
     saveEpisodeSessions(sessions);
+    persistEpisodeMediaStore();
     if (LIB) {
       const status = buildEpisodeSessionSnapshot().workspaceReached
         ? LIB.EPISODE_STATUS.IN_PROGRESS
@@ -345,6 +412,7 @@
     styleSelection = data.styleSelection || (STY ? STY.createSelection() : null);
     appliedStyle = data.appliedStyle || null;
     appliedAudioPolish = data.appliedAudioPolish || null;
+    audioPolish = data.audioPolish || (appliedAudioPolish && AP ? AP.createPolish(ES.summarize(state)) : null);
     contextApproved = Boolean(data.contextApproved);
     publishReviewApproved = Boolean(data.publishReviewApproved);
     publishReviewApprovedAt = data.publishReviewApprovedAt || null;
@@ -2380,6 +2448,14 @@
         speaker.fileName = file ? file.name : "";
         speaker.fileSize = file ? file.size : 0;
         chosen.textContent = speaker.fileName ? `Selected: ${speaker.fileName}` : "No file chosen yet";
+        if (file && typeof file.arrayBuffer === "function") {
+          // Capture the real imported media bytes (bounded) so audio polish transforms the
+          // actual uploaded file rather than a metadata stand-in (#197).
+          file.arrayBuffer().then((buffer) => {
+            const all = new Uint8Array(buffer);
+            uploadedMediaBytes[file.name] = all.length > 65536 ? all.slice(0, 65536) : all;
+          }).catch(() => { /* ignore unreadable file */ });
+        }
       });
       sourceBlock.appendChild(field("Speaker video file", fileInput, `speaker:${index}:source`));
       sourceBlock.appendChild(chosen);
@@ -4743,10 +4819,33 @@
 
   // ---- Audio polish (#15) -----------------------------------------------------
 
+  // Process the currently selected treatment into durable polished assets for every imported
+  // speaker track, then mirror the result into module state. Runs whenever the creator opens
+  // the audio step or changes a quality choice, so the processed result is always shown — not
+  // gated behind a separate click that a passive screen capture would miss (#197).
+  function processAudioPolish(summary) {
+    if (!AP || !summary) {
+      return { ok: false };
+    }
+    registerImportedSources(summary);
+    const episodeKey = currentEpisodeMediaKey();
+    const result = AP.runPolish(audioPolish, summary, EM, {
+      episodeKey,
+      sourceBytesById: currentSourceBytesById(summary),
+    });
+    audioPolish = result.polish;
+    appliedAudioPolish = AP.summarizePolish(audioPolish, EM);
+    persistEpisodeSession();
+    return result;
+  }
+
   function renderAudioPolish(summary) {
     if (!audioPolish) {
       audioPolish = AP.createPolish(summary);
     }
+    // Process on arrival (and after any change) so the rendered step shows real per-track
+    // polished outputs and saved asset references immediately.
+    const processResult = processAudioPolish(summary);
     root.innerHTML = "";
     setStep("Step 3 of 8 · Audio polish");
 
@@ -4755,7 +4854,7 @@
       el("div", { class: "workspace-head" },
         el("p", { class: "eyebrow" }, "Audio polish"),
         el("h2", {}, `Shape the sound for ${summary.episodeName}`),
-        el("p", { class: "hint" }, "Choose the quality you want — not technical settings. Each speaker track below will get this treatment."),
+        el("p", { class: "hint" }, "Choose the quality you want — not technical settings. Each imported speaker track is processed into a saved polished audio file below."),
       ),
     );
 
@@ -4803,17 +4902,35 @@
 
     const tracksCard = el("section", { class: "card" }, el("h3", {}, "Speaker tracks"));
     tracksCard.appendChild(
-      el("p", { class: "hint" }, "Each imported source receives the treatment you choose above."),
+      el("p", { class: "hint" }, "Each imported source is transformed into a polished audio file used by review and export."),
     );
     const trackList = el("div", { class: "audio-track-list" });
     audioPolish.speakers.forEach((track) => {
+      const statusClass = track.status === AP.TRACK_STATUS.COMPLETE
+        ? "audio-track-status-complete"
+        : track.status === AP.TRACK_STATUS.FAILED
+          ? "audio-track-status-failed"
+          : track.status === AP.TRACK_STATUS.PROCESSING
+            ? "audio-track-status-processing"
+            : "audio-track-status-pending";
+      const provenanceText = track.sourceProvenance === "upload"
+        ? `Source: uploaded file · ${track.sourceSizeBytes || 0} bytes`
+        : "Source: imported reference track";
       trackList.appendChild(
         el("div", { class: "audio-track" },
           el("div", { class: "audio-track-main" },
             el("span", { class: "role-pill" }, track.role),
             el("span", { class: "summary-name" }, track.name),
+            el("span", { class: `audio-track-status ${statusClass}` }, AP.trackStatusLabel(track.status)),
           ),
           el("p", { class: "summary-source" }, track.sourceLabel),
+          track.status === AP.TRACK_STATUS.COMPLETE ? el("p", { class: "hint audio-track-provenance" }, provenanceText) : null,
+          track.polishedAssetId
+            ? el("p", { class: "hint audio-track-asset" }, `Polished file: ${track.polishedAssetId} · ${track.polishedSizeBytes || 0} bytes`)
+            : null,
+          track.error
+            ? el("p", { class: "hint audio-track-error", role: "alert" }, track.error)
+            : null,
           el("span", { class: "audio-track-badge" }, AP.speakerIndicator(audioPolish, track)),
         ),
       );
@@ -4822,9 +4939,36 @@
     grid.appendChild(tracksCard);
     view.appendChild(grid);
 
-    const applyButton = el("button", { type: "button", class: "primary" }, "Apply audio & continue →");
+    if (appliedAudioPolish && appliedAudioPolish.complete) {
+      view.appendChild(
+        el(
+          "div",
+          { class: "banner audio-polish-result", role: "status" },
+          el("strong", {}, "Polished audio saved"),
+          el("p", { class: "hint" }, appliedAudioPolish.exportAudioLine || appliedAudioPolish.polishedTrackLine || "All speaker tracks processed."),
+        ),
+      );
+    } else if (processResult && !processResult.ok) {
+      view.appendChild(
+        el(
+          "div",
+          { class: "banner audio-polish-error", role: "alert" },
+          el("strong", {}, "Some tracks could not be processed"),
+          el("p", { class: "hint" }, (processResult.error || "Fix the imported sources and try again.")),
+        ),
+      );
+    }
+
+    const continueLabel = appliedAudioPolish && appliedAudioPolish.complete
+      ? "Apply audio & continue →"
+      : "Retry audio processing →";
+    const applyButton = el("button", { type: "button", class: "primary" }, continueLabel);
     applyButton.addEventListener("click", () => {
-      appliedAudioPolish = AP.summarizePolish(audioPolish);
+      const result = processAudioPolish(summary);
+      if (!result.ok) {
+        renderAudioPolish(summary);
+        return;
+      }
       if (STY && !appliedStyle) {
         renderStyle(summary);
       } else {
@@ -5406,5 +5550,6 @@
     templateStore = TM.hydrateTemplateStore(safeLoadTemplates(), showLibrary);
     persistTemplates();
   }
+  hydrateEpisodeMediaStore();
   renderShowLibrary();
 }());

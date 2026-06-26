@@ -7,12 +7,24 @@
 const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 
 let passed = 0;
 function test(name, fn) {
+  media.resetStore();
   fn();
   passed += 1;
   console.log(`  ok ${name}`);
+}
+
+function polishEpisode(episode, presetId) {
+  let polish = audio.createPolish(episode);
+  if (presetId) {
+    polish = audio.applyPreset(polish, presetId);
+  }
+  const result = audio.runPolish(polish, episode, media, { episodeKey: "show:ep" });
+  assert.strictEqual(result.ok, true, "runPolish should save polished assets for every track");
+  return result.polish;
 }
 
 function completeUploadDraft() {
@@ -74,10 +86,39 @@ test("summarizePolish reflects the chosen treatment", () => {
   assert.strictEqual(summary.speakerCount, 3);
 });
 
-test("buildReviewSummary includes audio in the export path", () => {
+test("unprocessed polish is not yet ready for export", () => {
   const episode = setup.summarize(completeUploadDraft());
-  const polish = audio.summarizePolish(audio.createPolish(episode));
-  const review = audio.buildReviewSummary(episode, polish, {
+  const summary = audio.summarizePolish(audio.createPolish(episode), media);
+  assert.strictEqual(summary.complete, false);
+  assert.strictEqual(summary.usesPolishedForExport, false);
+  const review = audio.buildReviewSummary(episode, summary, {});
+  assert.strictEqual(review.readyForExport, false);
+});
+
+test("runPolish saves a distinct polished asset for every imported track", () => {
+  const episode = setup.summarize(completeUploadDraft());
+  const polish = polishEpisode(episode, "studio");
+  assert.strictEqual(polish.status, "complete");
+  polish.speakers.forEach((track) => {
+    assert.strictEqual(track.status, "complete");
+    assert.ok(track.polishedAssetId, "track has a polished asset id");
+    assert.ok(media.hasAsset(track.polishedAssetId), "polished asset is saved in the store");
+    const polished = media.getAsset(track.polishedAssetId);
+    assert.strictEqual(polished.kind, "polished");
+    assert.ok(polished.sizeBytes > 44, "polished asset carries real WAV bytes");
+    const source = media.getAsset(track.sourceAssetId);
+    assert.ok(source, "raw source asset exists");
+    assert.notStrictEqual(polished.checksum, source.checksum, "polished bytes differ from raw source");
+  });
+});
+
+test("buildReviewSummary includes polished audio once processed", () => {
+  const episode = setup.summarize(completeUploadDraft());
+  const polish = polishEpisode(episode, "clean");
+  const summary = audio.summarizePolish(polish, media);
+  assert.strictEqual(summary.complete, true);
+  assert.strictEqual(summary.usesPolishedForExport, true);
+  const review = audio.buildReviewSummary(episode, summary, {
     styleName: "Studio Spotlight",
     templateName: "Founders Unfiltered",
   });
@@ -88,7 +129,7 @@ test("buildReviewSummary includes audio in the export path", () => {
   assert.ok(review.summaryLines.some((line) => line.indexOf("Audio:") === 0));
 });
 
-test("ACCEPTANCE: episode setup flows into audio polish and saves a review summary", () => {
+test("ACCEPTANCE: applying polish turns imported tracks into saved polished audio", () => {
   const draft = completeUploadDraft();
   assert.strictEqual(setup.validateDraft(draft).ok, true);
 
@@ -98,9 +139,22 @@ test("ACCEPTANCE: episode setup flows into audio polish and saves a review summa
 
   polish = audio.applyPreset(polish, "clean");
   polish = audio.updateControl(polish, "speechClarity", "strong");
-  const applied = audio.summarizePolish(polish);
+  const result = audio.runPolish(polish, episode, media, { episodeKey: "show:ep" });
+  assert.strictEqual(result.ok, true);
+
+  const applied = audio.summarizePolish(result.polish, media);
   assert.strictEqual(applied.presetName, "Clean");
   assert.strictEqual(applied.speechClarityLabel, "Strong");
+  assert.strictEqual(applied.complete, true);
+  assert.strictEqual(applied.usesPolishedForExport, true);
+  assert.strictEqual(applied.tracks.length, episode.speakerCount);
+  applied.tracks.forEach((track) => {
+    assert.ok(media.hasAsset(track.polishedAssetId), "export uses a saved polished asset");
+  });
+
+  const manifest = media.buildExportAudioManifest(applied);
+  assert.strictEqual(manifest.usePolished, true);
+  assert.strictEqual(manifest.tracks.length, episode.speakerCount);
 
   const review = audio.buildReviewSummary(episode, applied, {});
   assert.strictEqual(review.readyForExport, true);

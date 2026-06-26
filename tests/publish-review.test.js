@@ -8,6 +8,7 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const contextApi = require("../app/social-context.js");
 const review = require("../app/publish-review.js");
@@ -15,9 +16,16 @@ const exportApi = require("../app/episode-export.js");
 
 let passed = 0;
 function test(name, fn) {
+  media.resetStore();
   fn();
   passed += 1;
   console.log(`  ok ${name}`);
+}
+
+function processedPolish(episode) {
+  const result = audio.runPolish(audio.createPolish(episode), episode, media, { episodeKey: "show:ep" });
+  assert.strictEqual(result.ok, true, "polish should process every track");
+  return audio.summarizePolish(result.polish, media);
 }
 
 function completeDraft() {
@@ -44,7 +52,7 @@ function fullContext(episode, options) {
   let contextReview = contextApi.createReview(episode);
   contextReview = contextApi.approveReview(contextReview);
   return {
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
+    audioPolish: processedPolish(episode),
     appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
     templateName: opts.templateName || "Founders Unfiltered",
     hasCanvas: opts.hasCanvas !== false,

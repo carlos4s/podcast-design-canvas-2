@@ -7,6 +7,7 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const workspace = require("../app/episode-workspace.js");
 const review = require("../app/publish-review.js");
@@ -14,9 +15,16 @@ const exportApi = require("../app/episode-export.js");
 
 let passed = 0;
 function test(name, fn) {
+  media.resetStore();
   fn();
   passed += 1;
   console.log(`  ok ${name}`);
+}
+
+function processedPolish(episode) {
+  const result = audio.runPolish(audio.createPolish(episode), episode, media, { episodeKey: "show:ep" });
+  assert.strictEqual(result.ok, true, "polish should process every track");
+  return audio.summarizePolish(result.polish, media);
 }
 
 function completeDraft() {
@@ -36,7 +44,7 @@ function baseCtx(episode, overrides) {
   board = moments.addMoment(board, "caption", { time: 30, text: "Welcome", speakerRole: "Host" });
   return Object.assign({
     appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
+    audioPolish: processedPolish(episode),
     templateName: "Founders Format",
     momentsSummary: moments.summarizeBoard(board),
     contextApproved: true,

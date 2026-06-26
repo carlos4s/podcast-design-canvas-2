@@ -7,6 +7,7 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const contextApi = require("../app/social-context.js");
 const review = require("../app/publish-review.js");
@@ -14,9 +15,16 @@ const exportApi = require("../app/episode-export.js");
 
 let passed = 0;
 function test(name, fn) {
+  media.resetStore();
   fn();
   passed += 1;
   console.log(`  ok ${name}`);
+}
+
+function processedPolish(episode) {
+  const result = audio.runPolish(audio.createPolish(episode), episode, media, { episodeKey: "show:ep" });
+  assert.strictEqual(result.ok, true, "polish should process every track");
+  return audio.summarizePolish(result.polish, media);
 }
 
 function completeDraft() {
@@ -34,12 +42,13 @@ function completeDraft() {
 function exportContext(episode, options) {
   const opts = options || {};
   const selection = style.createSelection();
+  const polishSummary = processedPolish(episode);
   let board = moments.createBoard(episode);
   board = moments.addMoment(board, "caption", { time: "1:00", text: "Welcome back", speakerRole: "Host" });
   let contextReview = contextApi.createReview(episode);
   contextReview = contextApi.approveReview(contextReview);
   let publishReview = review.createReview(episode, {
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
+    audioPolish: polishSummary,
     appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
     templateName: "Founders Look",
     hasCanvas: true,
@@ -53,7 +62,7 @@ function exportContext(episode, options) {
     publishReview = review.approveReview(publishReview).review;
   }
   return {
-    audioPolish: audio.summarizePolish(audio.createPolish(episode)),
+    audioPolish: polishSummary,
     appliedStyle: style.summarizeStyle(selection, episode.speakerCount),
     templateName: "Founders Look",
     momentsSummary: moments.summarizeBoard(board),

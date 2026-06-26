@@ -8,14 +8,26 @@ const assert = require("assert");
 const setup = require("../app/episode-setup.js");
 const style = require("../app/episode-style.js");
 const audio = require("../app/audio-polish.js");
+const media = require("../app/episode-media.js");
 const moments = require("../app/visual-moments.js");
 const exportApi = require("../app/episode-export.js");
 
 let passed = 0;
 function test(name, fn) {
+  media.resetStore();
   fn();
   passed += 1;
   console.log(`  ok ${name}`);
+}
+
+function processedPolish(episode, presetId) {
+  let polish = audio.createPolish(episode);
+  if (presetId) {
+    polish = audio.applyPreset(polish, presetId);
+  }
+  const result = audio.runPolish(polish, episode, media, { episodeKey: "show:ep" });
+  assert.strictEqual(result.ok, true, "polish should process every track");
+  return audio.summarizePolish(result.polish, media);
 }
 
 function completeUploadDraft() {
@@ -33,7 +45,7 @@ function completeUploadDraft() {
 function completeContext(episode) {
   const selection = style.createSelection();
   const appliedStyle = style.summarizeStyle(selection, episode.speakerCount);
-  const polish = audio.summarizePolish(audio.createPolish(episode));
+  const polish = processedPolish(episode);
   const board = moments.createBoard(episode);
   const withMoment = moments.addMoment(board, "caption", { time: "1:00", text: "Welcome back", speakerRole: "Host" });
   const momentsSummary = moments.summarizeBoard(withMoment);
@@ -181,6 +193,11 @@ test("ACCEPTANCE: review episode choices, pick export options, start export, rea
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.state.status, "ready");
   assert.ok(result.state.downloadName.endsWith(".mp4"));
+  assert.strictEqual(result.state.usesPolishedAudio, true);
+  assert.strictEqual(result.state.audioManifest.tracks.length, episode.speakerCount);
+  result.state.audioManifest.tracks.forEach((track) => {
+    assert.ok(media.hasAsset(track.assetId), "export manifest references a saved polished asset");
+  });
 });
 
 console.log(`\nepisode export: ${passed} assertions passed`);
