@@ -44,6 +44,8 @@
   let state = ES.createDraft();
   let errors = {};
   let showErrors = false;
+  // Riverside track discovery preview (#225), kept until the link or source mode changes.
+  let riversideDiscovery = null;
   // Style step state, kept across navigation so choices survive Edit setup / Back.
   let styleSelection = STY ? STY.createSelection() : null;
   let appliedStyle = null;
@@ -2176,6 +2178,7 @@
       });
       input.addEventListener("change", () => {
         state.sourceMode = mode.key;
+        riversideDiscovery = null;
         renderSetup();
       });
       return el("label", { class: "mode-option", for: id }, input, el("span", {}, mode.label));
@@ -2198,6 +2201,8 @@
       });
       linkInput.addEventListener("input", (e) => {
         state.riversideLink = e.target.value;
+        // A new link invalidates the previously discovered tracks.
+        riversideDiscovery = null;
         syncImportReadyBanner();
       });
       sourceCard.appendChild(
@@ -2212,6 +2217,7 @@
           ),
         );
       }
+      sourceCard.appendChild(renderRiversideDiscovery());
     } else {
       sourceCard.appendChild(
         el("p", { class: "hint" }, "Add a separate synced video file for each speaker in the cards below — or attach placeholder files to try the flow without real uploads."),
@@ -2289,6 +2295,79 @@
     ensureSetupStyleApplied();
     syncImportReadyBanner();
     persistEpisodeSession();
+  }
+
+  // Riverside track discovery panel (#225): pull the session's speaker tracks from a
+  // pasted riverside.fm link, then map them onto Host / Guest buckets in one click.
+  function renderRiversideDiscovery() {
+    const wrap = el("div", { class: "riverside-discovery" });
+    wrap.appendChild(
+      el("p", { class: "hint riverside-discover-hint" },
+        "Pull the speaker tracks from your Riverside session so you can map them to buckets automatically."),
+    );
+    const actions = el("div", { class: "riverside-discover-actions" });
+    const discoverBtn = el(
+      "button",
+      { type: "button", class: "btn-secondary riverside-discover-btn" },
+      riversideDiscovery && riversideDiscovery.ok ? "Re-discover tracks" : "Discover tracks",
+    );
+    discoverBtn.addEventListener("click", () => {
+      readSetupFormState();
+      riversideDiscovery = ES.discoverRiversideTracks(state.riversideLink);
+      renderSetup();
+    });
+    actions.appendChild(discoverBtn);
+
+    if (!trim(state.riversideLink)) {
+      const demoBtn = el("button", { type: "button", class: "link-button riverside-demo-btn" }, "Use the demo session link");
+      demoBtn.addEventListener("click", () => {
+        state.riversideLink = ES.sandboxDemoRiversideLink();
+        riversideDiscovery = ES.discoverRiversideTracks(state.riversideLink);
+        renderSetup();
+      });
+      actions.appendChild(demoBtn);
+    }
+    wrap.appendChild(actions);
+
+    if (!riversideDiscovery) {
+      return wrap;
+    }
+
+    if (!riversideDiscovery.ok) {
+      wrap.appendChild(
+        el("p", { class: "form-error riverside-discover-error", role: "alert" },
+          riversideDiscovery.error || "Could not read that Riverside link."),
+      );
+      return wrap;
+    }
+
+    const results = el("div", { class: "riverside-tracks", role: "status" });
+    results.appendChild(
+      el("p", { class: "riverside-tracks-lead" }, ES.summarizeDiscovery(riversideDiscovery)),
+    );
+    const list = el("ul", { class: "riverside-track-list" });
+    riversideDiscovery.tracks.forEach((track) => {
+      list.appendChild(
+        el("li", { class: "riverside-track" },
+          el("span", { class: "riverside-track-label" }, track.speakerLabel),
+          el("span", { class: "riverside-track-role" }, `→ ${track.suggestedRole}`),
+          el("span", { class: "riverside-track-duration" }, track.durationLabel),
+          el("span", { class: "riverside-track-sync" }, track.syncStatus),
+        ),
+      );
+    });
+    results.appendChild(list);
+
+    const applyBtn = el("button", { type: "button", class: "primary riverside-apply-btn" }, "Apply to speaker buckets");
+    applyBtn.addEventListener("click", () => {
+      readSetupFormState();
+      state = ES.applyDiscoveryToBuckets(state, riversideDiscovery);
+      sanitizeSetupState();
+      renderSetup();
+    });
+    results.appendChild(applyBtn);
+    wrap.appendChild(results);
+    return wrap;
   }
 
   function renderSpeaker(speaker, index) {

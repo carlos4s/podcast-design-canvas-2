@@ -474,6 +474,142 @@
     return true;
   }
 
+  // ---- Riverside track discovery (#225) --------------------------------------
+  // When a creator pastes a Riverside recording link, surface the speaker tracks the
+  // session contains so buckets can be assigned without manual guesswork. There is no
+  // Riverside backend in the sandbox, so a valid riverside.fm link yields a deterministic
+  // session preview (stable for a given link) that simulates what a real import returns.
+
+  function riversideHost(url) {
+    const text = trim(url);
+    if (!/^https?:\/\//i.test(text)) {
+      return "";
+    }
+    return text.replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase();
+  }
+
+  function isRiversideUrl(url) {
+    if (!isLikelyUrl(url)) {
+      return false;
+    }
+    const host = riversideHost(url);
+    return host === "riverside.fm" || host.endsWith(".riverside.fm");
+  }
+
+  function hashString(value) {
+    // FNV-1a 32-bit — used only to make the simulated session preview deterministic.
+    let h = 0x811c9dc5;
+    const text = String(value);
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+
+  function formatTrackDuration(totalSeconds) {
+    const secs = Math.max(0, Math.round(Number(totalSeconds) || 0));
+    const hours = Math.floor(secs / 3600);
+    const minutes = Math.floor((secs % 3600) / 60);
+    const seconds = secs % 60;
+    const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
+    const ss = String(seconds).padStart(2, "0");
+    return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  // The fixed, friendly track preview for the built-in sandbox demo link.
+  function sandboxDemoTracks() {
+    return [
+      { speakerLabel: "Studio mic 1", durationSeconds: 3725 },
+      { speakerLabel: "Studio mic 2", durationSeconds: 3718 },
+      { speakerLabel: "Studio mic 3", durationSeconds: 3702 },
+    ];
+  }
+
+  // Discover the speaker tracks a Riverside session contains. Deterministic for a given
+  // link. Returns { ok:false, error } for empty, malformed, or non-Riverside URLs (never
+  // throws, never mutates the draft) so the setup form can show a clear inline error.
+  function discoverRiversideTracks(url) {
+    const link = trim(url);
+    if (!link) {
+      return { ok: false, error: "Paste your Riverside recording link first." };
+    }
+    if (!isLikelyUrl(link)) {
+      return { ok: false, error: "That doesn't look like a full link — paste the Riverside URL starting with http." };
+    }
+    if (!isRiversideUrl(link)) {
+      return { ok: false, error: "That link isn't a Riverside recording — paste a riverside.fm session link." };
+    }
+
+    const seed = hashString(link);
+    const isDemo = isSandboxDemoRiversideLink(link);
+    let raw;
+    if (isDemo) {
+      raw = sandboxDemoTracks();
+    } else {
+      const count = 2 + (seed % 2); // 2 or 3 tracks
+      const baseDuration = 1800 + (seed % 2400); // 30–70 min base, long-form
+      raw = [];
+      for (let i = 0; i < count; i += 1) {
+        const jitter = (hashString(link + ":" + i) % 120) - 60; // +/- 60s per track
+        raw.push({
+          speakerLabel: `Studio mic ${i + 1}`,
+          durationSeconds: Math.max(60, baseDuration + jitter),
+        });
+      }
+    }
+
+    const tracks = raw.map((track, index) => ({
+      id: `track-${index + 1}`,
+      trackNumber: index + 1,
+      speakerLabel: track.speakerLabel,
+      suggestedRole: defaultSpeakerRoleForIndex(index),
+      durationSeconds: track.durationSeconds,
+      durationLabel: formatTrackDuration(track.durationSeconds),
+      syncStatus: "In sync",
+    }));
+
+    return {
+      ok: true,
+      sessionId: seed.toString(16).padStart(8, "0"),
+      sessionLabel: isDemo ? "Podcast Canvas demo session" : "Riverside session",
+      isDemo: isDemo,
+      trackCount: tracks.length,
+      tracks: tracks,
+    };
+  }
+
+  // Map discovered tracks onto speaker buckets in order (Host, Guest 1, Guest 2…),
+  // resizing the speaker list to match and recording each track's channel label while
+  // keeping any names the creator already entered. Returns the updated draft.
+  function applyDiscoveryToBuckets(draft, discovery) {
+    const data = draft && typeof draft === "object" ? draft : createDraft();
+    if (!discovery || discovery.ok !== true || !Array.isArray(discovery.tracks) || !discovery.tracks.length) {
+      return data;
+    }
+    const existing = Array.isArray(data.speakers) ? data.speakers : [];
+    data.sourceMode = "riverside";
+    data.speakers = discovery.tracks.map((track, index) => {
+      const prior = existing[index] && typeof existing[index] === "object"
+        ? existing[index]
+        : createSpeaker("Host");
+      prior.trackLabel = track.speakerLabel || prior.trackLabel || `Track ${index + 1}`;
+      return prior;
+    });
+    normalizeDefaultSpeakerRoles(data.speakers);
+    return data;
+  }
+
+  // A creator-facing recap of a successful discovery for the setup summary/banner.
+  function summarizeDiscovery(discovery) {
+    if (!discovery || discovery.ok !== true) {
+      return "";
+    }
+    const count = discovery.trackCount || (discovery.tracks ? discovery.tracks.length : 0);
+    const roles = (discovery.tracks || []).map((track) => track.suggestedRole).filter(Boolean).join(", ");
+    return `${count} track${count === 1 ? "" : "s"} discovered · ${roles} · all in sync`;
+  }
+
   const api = {
     SPEAKER_BUCKETS,
     SOURCE_MODES,
@@ -499,6 +635,11 @@
     defaultImportShowName,
     sandboxDemoRiversideLink,
     isSandboxDemoRiversideLink,
+    isRiversideUrl,
+    formatTrackDuration,
+    discoverRiversideTracks,
+    applyDiscoveryToBuckets,
+    summarizeDiscovery,
     handoffIdentityLine,
     handoffSourceDetail,
     applySandboxHandoffSource,
