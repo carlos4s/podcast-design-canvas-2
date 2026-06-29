@@ -1900,6 +1900,11 @@
       renderStyle(summary);
       return;
     }
+    if (destination === "moments") {
+      lastView = "moments";
+      renderVisualMoments(summary);
+      return;
+    }
     if (destination === "context") {
       lastView = "context";
       if (!contextReview) {
@@ -5389,15 +5394,11 @@
     });
 
     if (hasApplied) {
-      const continueButton = el("button", { type: "button", class: "primary" }, "Continue →");
+      const continueButton = el("button", { type: "button", class: "primary" }, "Continue to visual moments →");
       continueButton.addEventListener("click", () => {
-        lastView = STY && !appliedStyle ? "style" : "workspace";
+        lastView = "moments";
         persistEpisodeSession();
-        if (STY && !appliedStyle) {
-          renderStyle(summary);
-        } else {
-          renderWorkspace(summary);
-        }
+        renderVisualMoments(summary);
       });
       const reapply = el("button", { type: "button", class: "ghost" }, "Re-apply polish");
       reapply.addEventListener("click", () => {
@@ -5559,7 +5560,8 @@
   function renderVisualMoments(summary) {
     ensureMomentsBoard(summary);
     root.innerHTML = "";
-    setStep("Step 6 of 8 · Visual moments");
+    lastView = "moments";
+    setStep("Step 4 of 8 · Visual moments");
 
     const list = VM.listMoments(momentsBoard);
     // Keep the selected moment valid; default to the first moment so a preview is shown.

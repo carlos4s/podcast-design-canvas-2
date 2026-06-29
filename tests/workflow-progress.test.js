@@ -50,6 +50,7 @@ test("latestResumableDraft prefers the newest draft or in-progress episode", () 
 test("resumeDestination returns workspace when production progress was saved", () => {
   assert.strictEqual(flow.resumeDestination({ workspaceReached: true }), "workspace");
   assert.strictEqual(flow.resumeDestination({ setupComplete: true, lastView: "style" }), "style");
+  assert.strictEqual(flow.resumeDestination({ setupComplete: true, lastView: "moments" }), "moments");
   assert.strictEqual(flow.resumeDestination({ setupComplete: false }), "setup");
 });
 
@@ -72,6 +73,9 @@ test("UI wires workflow indicator, draft resume, and workspace next action (#89)
   assert.ok(ui.includes("workspace-production-checklist"));
   assert.ok(ui.includes("setWorkspaceStep"));
   assert.ok(ui.includes("persistEpisodeSession"));
+  assert.ok(ui.includes("Continue to visual moments →"));
+  assert.ok(ui.includes('lastView = "moments"'));
+  assert.ok(ui.includes("Step 4 of 8 · Visual moments"));
   assert.ok(styles.includes(".workspace-handoff-layout"));
   assert.ok(styles.includes(".workspace-production-checklist"));
   assert.ok(styles.includes(".show-episode-card-resumable"));
